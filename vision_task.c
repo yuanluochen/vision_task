@@ -1,7 +1,7 @@
 /**
  * @file vision_task.c
  * @author yuanluochen
- * @brief ½âÎöÊÓ¾õÊı¾İ°ü£¬´¦ÀíÊÓ¾õ¹Û²âÊı¾İ£¬Ô¤²â×°¼×°åÎ»ÖÃ£¬ÒÔ¼°¼ÆËãµ¯µÀ¹ì¼££¬½øĞĞµ¯µÀ²¹³¥
+ * @brief è§£æè§†è§‰æ•°æ®åŒ…ï¼Œå¤„ç†è§†è§‰è§‚æµ‹æ•°æ®ï¼Œé¢„æµ‹è£…ç”²æ¿ä½ç½®ï¼Œä»¥åŠè®¡ç®—å¼¹é“è½¨è¿¹ï¼Œè¿›è¡Œå¼¹é“è¡¥å¿
  * @version 0.1
  * @date 2023-03-11
  *
@@ -25,133 +25,133 @@
 
 uint8_t target_appear_flag = 0;
 
-// ÊÓ¾õÈÎÎñ³õÊ¼»¯
+// è§†è§‰ä»»åŠ¡åˆå§‹åŒ–
 static void vision_task_init(vision_control_t* init);
-// ÊÓ¾õÈÎÎñÊı¾İ¸üĞÂ
+// è§†è§‰ä»»åŠ¡æ•°æ®æ›´æ–°
 static void vision_task_feedback_update(vision_control_t* update);
-// ÉèÖÃÄ¿±ê×°¼×°åÑÕÉ«
+// è®¾ç½®ç›®æ ‡è£…ç”²æ¿é¢œè‰²
 static void vision_set_target_armor_color(vision_control_t* set_detect_color, robot_armor_color_e enemy_armor_color);
-// ÅĞ¶ÏÊÇ·ñÊ¶±ğµ½Ä¿±ê
+// åˆ¤æ–­æ˜¯å¦è¯†åˆ«åˆ°ç›®æ ‡
 static void vision_judge_appear_target(vision_control_t* judge_appear_target);
-// ´¦ÀíÉÏÎ»»úÊı¾İ,¼ÆËãµ¯µÀµÄ¿Õ¼äÂäµã£¬²¢·´½â¿Õ¼ä¾ø¶Ô½Ç
+// å¤„ç†ä¸Šä½æœºæ•°æ®,è®¡ç®—å¼¹é“çš„ç©ºé—´è½ç‚¹ï¼Œå¹¶åè§£ç©ºé—´ç»å¯¹è§’
 static void vision_data_process(vision_control_t* vision_data);
-// ÅäÖÃ·¢ËÍÊı¾İ°ü
+// é…ç½®å‘é€æ•°æ®åŒ…
 static void set_vision_send_packet(vision_control_t* set_send_packet);
 
 
 
-// ³õÊ¼»¯µ¯µÀ½âËãµÄ²ÎÊı
+// åˆå§‹åŒ–å¼¹é“è§£ç®—çš„å‚æ•°
 static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory, fp32 k1, fp32 init_flight_time, fp32 time_bias, fp32 z_static, fp32 distance_static);
-// Ñ¡Ôñ×îÓÅ»÷´òÄ¿±ê
+// é€‰æ‹©æœ€ä¼˜å‡»æ‰“ç›®æ ‡
 static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_data_t* vision_data, target_position_t* optimal_target_position);
-// ¸³ÖµÔÆÌ¨Ãé×¼Î»ÖÃ
+// èµ‹å€¼äº‘å°ç„å‡†ä½ç½®
 static void calc_robot_gimbal_aim_vector(vector_t* robot_gimbal_aim_vector, target_position_t* target_position, fp32 vx, fp32 vy, fp32 vz, fp32 predict_time);
-// ¼ÆËãµ¯µÀÂäµã -- µ¥·½Ïò¿Õ¼ä×èÁ¦Ä£ĞÍ
+// è®¡ç®—å¼¹é“è½ç‚¹ -- å•æ–¹å‘ç©ºé—´é˜»åŠ›æ¨¡å‹
 static float calc_bullet_drop(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta);
-// ¼ÆËãµ¯µÀÂäµã -- ÍêÈ«¿ÕÆø×èÁ¦Ä£ĞÍ
+// è®¡ç®—å¼¹é“è½ç‚¹ -- å®Œå…¨ç©ºæ°”é˜»åŠ›æ¨¡å‹
 static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta);
-// ¶şÎ¬Æ½Ãæµ¯µÀÄ£ĞÍ£¬¼ÆËãpitchÖáµÄ¸ß¶È
+// äºŒç»´å¹³é¢å¼¹é“æ¨¡å‹ï¼Œè®¡ç®—pitchè½´çš„é«˜åº¦
 static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajectory, fp32 x, fp32 z, fp32 x_offset, fp32 z_offset, int mode);
-//¸üĞÂµ¯ËÙ£¬²¢¹À¼Æµ±Ç°µ¯ËÙ
+//æ›´æ–°å¼¹é€Ÿï¼Œå¹¶ä¼°è®¡å½“å‰å¼¹é€Ÿ
 static void update_bullet_speed(bullet_speed_t *bullet_speed, fp32 cur_bullet_speed);
 
-// »ñÈ¡½ÓÊÕÊı¾İ°üÖ¸Õë
+// è·å–æ¥æ”¶æ•°æ®åŒ…æŒ‡é’ˆ
 static vision_receive_t* get_vision_receive_point(void);
 
-// ÊÓ¾õÈÎÎñ½á¹¹Ìå
+// è§†è§‰ä»»åŠ¡ç»“æ„ä½“
 vision_control_t vision_control = { 0 };
-// ÊÓ¾õ½ÓÊÕ½á¹¹Ìå
+// è§†è§‰æ¥æ”¶ç»“æ„ä½“
 vision_receive_t vision_receive = { 0 };
 
 fp32 time_bias = 15.0f;
 
 void vision_task(void const* pvParameters)
 {
-    // ÑÓÊ±µÈ´ı£¬µÈ´ıÉÏÎ»»ú·¢ËÍÊı¾İ³É¹¦
+    // å»¶æ—¶ç­‰å¾…ï¼Œç­‰å¾…ä¸Šä½æœºå‘é€æ•°æ®æˆåŠŸ
     vTaskDelay(VISION_TASK_INIT_TIME);
-    // ÊÓ¾õÈÎÎñ³õÊ¼»¯
+    // è§†è§‰ä»»åŠ¡åˆå§‹åŒ–
     vision_task_init(&vision_control);
-    // µÈ´ıÔÆÌ¨Éä»÷³õÊ¼»¯Íê³É
+    // ç­‰å¾…äº‘å°å°„å‡»åˆå§‹åŒ–å®Œæˆ
 
-    // ÏµÍ³ÑÓÊ±
+    // ç³»ç»Ÿå»¶æ—¶
     vTaskDelay(VISION_CONTROL_TIME_MS);
 
     while(1)
     {
-        // ¸üĞÂÊı¾İ
+        // æ›´æ–°æ•°æ®
         vision_task_feedback_update(&vision_control);
-        // ÉèÖÃÄ¿±ê×°¼×°åÑÕÉ«
+        // è®¾ç½®ç›®æ ‡è£…ç”²æ¿é¢œè‰²
         vision_set_target_armor_color(&vision_control, BLUE);
-        // ÅĞ¶ÏÊÇ·ñÊ¶±ğµ½Ä¿±ê
+        // åˆ¤æ–­æ˜¯å¦è¯†åˆ«åˆ°ç›®æ ‡
         vision_judge_appear_target(&vision_control);
-        // ´¦ÀíÉÏÎ»»úÊı¾İ,¼ÆËãµ¯µÀµÄ¿Õ¼äÂäµã£¬²¢·´½â¿Õ¼ä¾ø¶Ô½Ç,²¢ÉèÖÃ¿ØÖÆÃüÁî
+        // å¤„ç†ä¸Šä½æœºæ•°æ®,è®¡ç®—å¼¹é“çš„ç©ºé—´è½ç‚¹ï¼Œå¹¶åè§£ç©ºé—´ç»å¯¹è§’,å¹¶è®¾ç½®æ§åˆ¶å‘½ä»¤
         vision_data_process(&vision_control);
 
-        // ÅäÖÃ·¢ËÍÊı¾İ°ü
+        // é…ç½®å‘é€æ•°æ®åŒ…
         set_vision_send_packet(&vision_control);
-        // ·¢ËÍÊı¾İ°ü
+        // å‘é€æ•°æ®åŒ…
         send_packet(&vision_control);
 
-        // ÏµÍ³ÑÓÊ±
+        // ç³»ç»Ÿå»¶æ—¶
         vTaskDelay(VISION_CONTROL_TIME_MS);
     }
 }
 
 static void vision_task_init(vision_control_t* init)
 {
-    // »ñÈ¡ÍÓÂİÒÇ¾ø¶Ô½ÇÖ¸Õë
+    // è·å–é™€èºä»ªç»å¯¹è§’æŒ‡é’ˆ
     init->vision_angle_point = get_INS_point();
-    // »ñÈ¡½ÓÊÕÊı¾İ°üÖ¸Õë
+    // è·å–æ¥æ”¶æ•°æ®åŒ…æŒ‡é’ˆ
     init->vision_receive_point = get_vision_receive_point();
 
-    //³õÊ¼»¯·¢ÉäÄ£Ê½ÎªÍ£Ö¹Ï®»÷
+    //åˆå§‹åŒ–å‘å°„æ¨¡å¼ä¸ºåœæ­¢è¢­å‡»
     init->shoot_vision_control.shoot_command = SHOOT_STOP_ATTACK;
-    //³õÊ¼»¯Ò»Ğ©»ù±¾µÄµ¯µÀ²ÎÊı
+    //åˆå§‹åŒ–ä¸€äº›åŸºæœ¬çš„å¼¹é“å‚æ•°
     solve_trajectory_param_init(&init->solve_trajectory, AIR_K1, INIT_FILIGHT_TIME, TIME_MS_TO_S(time_bias), Z_STATIC, DISTANCE_STATIC);
-    //³õÊ¼»¯µ¯ËÙ
+    //åˆå§‹åŒ–å¼¹é€Ÿ
     init->bullet_speed.pos = 0;
     init->bullet_speed.est_bullet_speed = BEGIN_SET_BULLET_SPEED;
     init->bullet_speed.full_flag = 0;
     memset(init->bullet_speed.bullet_speed, 0, sizeof(init->bullet_speed.bullet_speed[0]) * BULLET_SPEED_SIZE);
-    //³õÊ¼»¯ÊÓ¾õÄ¿±ê×´Ì¬ÎªÎ´Ê¶±ğµ½Ä¿±ê
+    //åˆå§‹åŒ–è§†è§‰ç›®æ ‡çŠ¶æ€ä¸ºæœªè¯†åˆ«åˆ°ç›®æ ‡
     init->vision_target_appear_state = TARGET_UNAPPEAR;
     
-    //¸üĞÂÊı¾İ
+    //æ›´æ–°æ•°æ®
     vision_task_feedback_update(init);
 }
 // extern shoot_date;
 
 static void vision_task_feedback_update(vision_control_t* update)
 {
-    //¸üĞÂµ¯ËÙ
+    //æ›´æ–°å¼¹é€Ÿ
     update_bullet_speed(&update->bullet_speed, CUR_BULLET_SPEED);
     update->solve_trajectory.current_bullet_speed = update->bullet_speed.est_bullet_speed;
-    //»ñÈ¡Ä¿±êÊı¾İ
+    //è·å–ç›®æ ‡æ•°æ®
     if (update->vision_receive_point->receive_state == UNLOADED)
     {
-        //¿½±´Êı¾İ
+        //æ‹·è´æ•°æ®
         memcpy(&update->target_data, &update->vision_receive_point->receive_packet, sizeof(target_data_t));
-        //½ÓÊÕÊıÖµ×´Ì¬ÖÃÎªÒÑ¶ÁÈ¡
+        //æ¥æ”¶æ•°å€¼çŠ¶æ€ç½®ä¸ºå·²è¯»å–
         update->vision_receive_point->receive_state = LOADED;
     }
 }
 
 static void update_bullet_speed(bullet_speed_t *bullet_speed, fp32 cur_bullet_speed){
     static fp32 last_bullet_speed = 0;
-    //Ìí¼Óµ¯ËÙ
+    //æ·»åŠ å¼¹é€Ÿ
     if (cur_bullet_speed != 0 && cur_bullet_speed != last_bullet_speed && 
         cur_bullet_speed >= MIN_SET_BULLET_SPEED && cur_bullet_speed <= MAX_SET_BULLET_SPEED){
         bullet_speed->bullet_speed[(bullet_speed->pos++) % BULLET_SPEED_SIZE] = cur_bullet_speed;
         last_bullet_speed = cur_bullet_speed;
     }
-    //ÅĞ¶ÏÊÇ·ñÒÑÂú
+    //åˆ¤æ–­æ˜¯å¦å·²æ»¡
     if (bullet_speed->full_flag == 0 && bullet_speed->pos == BULLET_SPEED_SIZE - 1){
         bullet_speed->full_flag = 1;
     }
-    //¹À¼Æµ¯ËÙ
+    //ä¼°è®¡å¼¹é€Ÿ
     fp32 sum = 0;;
     for (int i = 0; 
-        (bullet_speed->full_flag == 1 && i < BULLET_SPEED_SIZE) || (bullet_speed->full_flag == 0 && i <= bullet_speed->pos);
+        (bullet_speed->full_flag == 1 && i < BULLET_SPEED_SIZE) || (bullet_speed->full_flag == 0 && i < bullet_speed->pos);
         i++){
             sum += bullet_speed->bullet_speed[i];
         }
@@ -161,7 +161,7 @@ static void update_bullet_speed(bullet_speed_t *bullet_speed, fp32 cur_bullet_sp
 
 static void vision_set_target_armor_color(vision_control_t* set_detect_color, robot_armor_color_e enemy_armor_color)
 {
-    //ÉèÖÃÄ¿±êÑÕÉ«ÎªÄ¿±êÑÕÉ«
+    //è®¾ç½®ç›®æ ‡é¢œè‰²ä¸ºç›®æ ‡é¢œè‰²
     set_detect_color->detect_armor_color = enemy_armor_color;
 }
 
@@ -169,7 +169,7 @@ static void vision_set_target_armor_color(vision_control_t* set_detect_color, ro
 
 static void vision_judge_appear_target(vision_control_t* judge_appear_target)
 {
-    //¸ù¾İ½ÓÊÕÊı¾İÅĞ¶ÏÊÇ·ñÎªÊ¶±ğµ½Ä¿±ê
+    //æ ¹æ®æ¥æ”¶æ•°æ®åˆ¤æ–­æ˜¯å¦ä¸ºè¯†åˆ«åˆ°ç›®æ ‡
     if (judge_appear_target->vision_receive_point->receive_packet.x == 0 &&
         judge_appear_target->vision_receive_point->receive_packet.y == 0 &&
         judge_appear_target->vision_receive_point->receive_packet.z == 0 &&
@@ -180,24 +180,24 @@ static void vision_judge_appear_target(vision_control_t* judge_appear_target)
         judge_appear_target->vision_receive_point->receive_packet.v_yaw == 0
        )
     {
-        //Î´Ê¶±ğµ½Ä¿±ê
+        //æœªè¯†åˆ«åˆ°ç›®æ ‡
         judge_appear_target->vision_target_appear_state = TARGET_UNAPPEAR;
     }
     else
     {
-        //Ê¶±ğµ½Ä¿±ê
+        //è¯†åˆ«åˆ°ç›®æ ‡
 
-        //¸üĞÂµ±Ç°Ê±¼ä
+        //æ›´æ–°å½“å‰æ—¶é—´
         judge_appear_target->vision_receive_point->current_time = TIME_MS_TO_S(HAL_GetTick());
-        //ÅĞ¶Ïµ±Ç°Ê±¼äÊÇ·ñ¾àÀëÉÏ´Î½ÓÊÕµÄÊ±¼ä¹ı³¤
+        //åˆ¤æ–­å½“å‰æ—¶é—´æ˜¯å¦è·ç¦»ä¸Šæ¬¡æ¥æ”¶çš„æ—¶é—´è¿‡é•¿
         if (fabs(judge_appear_target->vision_receive_point->current_time - judge_appear_target->vision_receive_point->current_receive_time) > MAX_NOT_RECEIVE_DATA_TIME)
         {
-            //ÅĞ¶ÏÎªÎ´Ê¶±ğÄ¿±ê
+            //åˆ¤æ–­ä¸ºæœªè¯†åˆ«ç›®æ ‡
             judge_appear_target->vision_target_appear_state = TARGET_UNAPPEAR;
         }
         else
         {
-          // ÉèÖÃÎªÊ¶±ğµ½Ä¿±ê
+          // è®¾ç½®ä¸ºè¯†åˆ«åˆ°ç›®æ ‡
           judge_appear_target->vision_target_appear_state = TARGET_APPEAR;
         }
     }
@@ -206,16 +206,16 @@ static void vision_judge_appear_target(vision_control_t* judge_appear_target)
 
 static void vision_data_process(vision_control_t* vision_data)
 {
-    //ÅĞ¶ÏÊÇ·ñÊ¶±ğµ½Ä¿±ê
+    //åˆ¤æ–­æ˜¯å¦è¯†åˆ«åˆ°ç›®æ ‡
     if (vision_data->vision_target_appear_state == TARGET_APPEAR)
     {
 		target_appear_flag = 1;
-        // Ê¶±ğµ½Ä¿±ê
-        //  Ñ¡Ôñ×îÓÅ×°¼×°å
+        // è¯†åˆ«åˆ°ç›®æ ‡
+        //  é€‰æ‹©æœ€ä¼˜è£…ç”²æ¿
         select_optimal_target(&vision_data->solve_trajectory, &vision_data->target_data, &vision_data->target_position);
-        // ¼ÆËã»úÆ÷ÈËÃé×¼Î»ÖÃ
+        // è®¡ç®—æœºå™¨äººç„å‡†ä½ç½®
         calc_robot_gimbal_aim_vector(&vision_data->robot_gimbal_aim_vector, &vision_data->target_position, vision_data->target_data.vx, vision_data->target_data.vy, vision_data->target_data.vz, vision_data->solve_trajectory.predict_time);
-        // ¼ÆËã»úÆ÷ÈËpitchÖáÓëyawÖá½Ç¶È
+        // è®¡ç®—æœºå™¨äººpitchè½´ä¸yawè½´è§’åº¦
         fp32 pitch_set = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(vision_data->robot_gimbal_aim_vector.x, 2) + pow(vision_data->robot_gimbal_aim_vector.y, 2)), vision_data->robot_gimbal_aim_vector.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, 1);
         fp32 yaw_set = atan2f(vision_data->robot_gimbal_aim_vector.y, vision_data->robot_gimbal_aim_vector.x);
         fp32 distance = sqrtf(pow(vision_data->robot_gimbal_aim_vector.x,2) + pow(vision_data->robot_gimbal_aim_vector.y,2));
@@ -230,7 +230,7 @@ static void vision_data_process(vision_control_t* vision_data)
     else
     {
 		target_appear_flag = 0;
-        //ÉèÖÃÍ£Ö¹·¢Éä
+        //è®¾ç½®åœæ­¢å‘å°„
         vision_data->shoot_vision_control.shoot_command = SHOOT_STOP_ATTACK;
     }
 
@@ -239,20 +239,20 @@ static void vision_data_process(vision_control_t* vision_data)
 
 
 /**
- * @brief ·ÖÎöÊÓ¾õÔ­Ê¼Ôö¼ÓÊı¾İ£¬¸ù¾İÔ­Ê¼Êı¾İ£¬ÅĞ¶ÏÊÇ·ñÒª½øĞĞ·¢Éä£¬ÅĞ¶ÏyawÖápitchµÄ½Ç¶È£¬Èç¹ûÔÚÒ»¶¨·¶Î§ÄÚ£¬Ôò¼ÆËãÖµÔö¼Ó£¬Ôö¼Óµ½Ò»¶¨ÊıÖµÔòÅĞ¶Ï·¢Éä£¬Èç¹ûyawÖápitchÖá½Ç¶È´óÓÚ¸Ã·¶Î§£¬Ôò¼ÆÊı¹éÁã
+ * @brief åˆ†æè§†è§‰åŸå§‹å¢åŠ æ•°æ®ï¼Œæ ¹æ®åŸå§‹æ•°æ®ï¼Œåˆ¤æ–­æ˜¯å¦è¦è¿›è¡Œå‘å°„ï¼Œåˆ¤æ–­yawè½´pitchçš„è§’åº¦ï¼Œå¦‚æœåœ¨ä¸€å®šèŒƒå›´å†…ï¼Œåˆ™è®¡ç®—å€¼å¢åŠ ï¼Œå¢åŠ åˆ°ä¸€å®šæ•°å€¼åˆ™åˆ¤æ–­å‘å°„ï¼Œå¦‚æœyawè½´pitchè½´è§’åº¦å¤§äºè¯¥èŒƒå›´ï¼Œåˆ™è®¡æ•°å½’é›¶
  *
- * @param shoot_judge ÊÓ¾õ½á¹¹Ìå
- * @param vision_begin_add_yaw_angle ÉÏÎ»»úÊÓ¾õyuwÖáÔ­Ê¼Ôö¼Ó½Ç¶È
- * @param vision_begin_add_pitch_angle ÉÏÎ»»úÊÓ¾õpitchÖáÔ­Ê¼Ôö¼Ó½Ç¶È
- * @param target_distance Ä¿±ê¾àÀë
+ * @param shoot_judge è§†è§‰ç»“æ„ä½“
+ * @param vision_begin_add_yaw_angle ä¸Šä½æœºè§†è§‰yuwè½´åŸå§‹å¢åŠ è§’åº¦
+ * @param vision_begin_add_pitch_angle ä¸Šä½æœºè§†è§‰pitchè½´åŸå§‹å¢åŠ è§’åº¦
+ * @param target_distance ç›®æ ‡è·ç¦»
  */
 void vision_shoot_judge(vision_control_t* shoot_judge, fp32 vision_begin_add_yaw_angle, fp32 vision_begin_add_pitch_angle, fp32 target_distance)
 {
     fp32 allow_attack_error = 0 ;
-    //ÅĞ¶ÏÄ¿±ê¾àÀë
+    //åˆ¤æ–­ç›®æ ‡è·ç¦»
     if (target_distance <= ALLOW_ATTACK_DISTANCE)
     {
-        // ÅĞ¶Ï¼£ÊÇ·ñĞ¡ÓÚÔÊĞíÖµ
+        // åˆ¤æ–­è¿¹æ˜¯å¦å°äºå…è®¸å€¼
        if (shoot_judge->vision_receive_point->receive_packet.p < ALLOE_ATTACK_P)
        {
 			if (shoot_judge->target_data.id == ARMOR_HERO)
@@ -263,7 +263,7 @@ void vision_shoot_judge(vision_control_t* shoot_judge, fp32 vision_begin_add_yaw
 			{
 				allow_attack_error = atan2((SMALL_ARMOR_WIDTH / 2.0f) - 0.02, target_distance);
 			}
-			// Ğ¡ÓÚÒ»½Ç¶È¿ªÊ¼»÷´ò
+			// å°äºä¸€è§’åº¦å¼€å§‹å‡»æ‰“
 			if (fabs(vision_begin_add_yaw_angle) <= allow_attack_error)
 			{
 				shoot_judge->shoot_vision_control.shoot_command = SHOOT_ATTACK;
@@ -276,7 +276,7 @@ void vision_shoot_judge(vision_control_t* shoot_judge, fp32 vision_begin_add_yaw
     }
     else
     {
-        //Ô¶¾àÀë²»»÷´ò
+        //è¿œè·ç¦»ä¸å‡»æ‰“
         shoot_judge->shoot_vision_control.shoot_command = SHOOT_STOP_ATTACK;
     }
 
@@ -301,9 +301,9 @@ void send_packet(vision_control_t* send)
     {
         return;
     }
-    //Ìí¼ÓCRC16µ½½áÎ²
+    //æ·»åŠ CRC16åˆ°ç»“å°¾
     append_CRC16_check_sum((uint8_t*)&send->send_packet, sizeof(send->send_packet));
-    //·¢ËÍÊı¾İ
+    //å‘é€æ•°æ®
     CDC_Transmit_FS((uint8_t*)&send->send_packet, sizeof(send->send_packet));
 }
 
@@ -313,38 +313,38 @@ void receive_decode(uint8_t* buf, uint32_t len)
     {
         return;
     }
-    //CRCĞ£Ñé
+    //CRCæ ¡éªŒ
     if (verify_CRC16_check_sum(buf, len))
     {
         receive_packet_t temp_packet = {0};
-        // ¿½±´½ÓÊÕµ½µÄÊı¾İµ½ÁÙÊ±ÄÚ´æÖĞ
+        // æ‹·è´æ¥æ”¶åˆ°çš„æ•°æ®åˆ°ä¸´æ—¶å†…å­˜ä¸­
         memcpy(&temp_packet, buf, sizeof(receive_packet_t));
         if (temp_packet.header == HIGH_TO_LOWER_HEAD)
         {
-            // Êı¾İÕıÈ·£¬½«ÁÙÊ±Êı¾İ¿½±´µ½½ÓÊÕÊı¾İ°üÖĞ
+            // æ•°æ®æ­£ç¡®ï¼Œå°†ä¸´æ—¶æ•°æ®æ‹·è´åˆ°æ¥æ”¶æ•°æ®åŒ…ä¸­
             memcpy(&vision_receive.receive_packet, &temp_packet, sizeof(receive_packet_t));
-            // ½ÓÊÕÊı¾İÊı¾İ×´Ì¬±êÖ¾ÎªÎ´¶ÁÈ¡
+            // æ¥æ”¶æ•°æ®æ•°æ®çŠ¶æ€æ ‡å¿—ä¸ºæœªè¯»å–
             vision_receive.receive_state = UNLOADED;
 
-            // ±£´æÊ±¼ä
+            // ä¿å­˜æ—¶é—´
             vision_receive.last_receive_time = vision_receive.current_receive_time;
-            // ¼ÇÂ¼µ±Ç°½ÓÊÕÊı¾İµÄÊ±¼ä
+            // è®°å½•å½“å‰æ¥æ”¶æ•°æ®çš„æ—¶é—´
             vision_receive.current_receive_time = TIME_MS_TO_S(HAL_GetTick());
-            //¼ÆËãÊ±¼ä¼ä¸ô
+            //è®¡ç®—æ—¶é—´é—´éš”
             vision_receive.interval_time = vision_receive.current_receive_time - vision_receive.last_receive_time;
         }
     }
 }
 
 /**
- * @brief ³õÊ¼»¯µ¯µÀ¼ÆËãµÄ²ÎÊı
+ * @brief åˆå§‹åŒ–å¼¹é“è®¡ç®—çš„å‚æ•°
  *
- * @param solve_trajectory µ¯µÀ¼ÆËã½á¹¹Ìå
- * @param k1 µ¯µÀ²ÎÊı
- * @param init_flight_time ³õÊ¼·ÉĞĞÊ±¼ä¹À¼ÆÖµ
- * @param time_bias ¹ÌÓĞ¼ä¸ôÊ±¼ä
- * @param z_static yawÖáµç»úµ½Ç¹¿ÚË®Æ½ÃæµÄ´¹Ö±¾àÀë
- * @param distance_static Ç¹¿ÚÇ°ÍÆ¾àÀë
+ * @param solve_trajectory å¼¹é“è®¡ç®—ç»“æ„ä½“
+ * @param k1 å¼¹é“å‚æ•°
+ * @param init_flight_time åˆå§‹é£è¡Œæ—¶é—´ä¼°è®¡å€¼
+ * @param time_bias å›ºæœ‰é—´éš”æ—¶é—´
+ * @param z_static yawè½´ç”µæœºåˆ°æªå£æ°´å¹³é¢çš„å‚ç›´è·ç¦»
+ * @param distance_static æªå£å‰æ¨è·ç¦»
  */
 static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory, fp32 k1, fp32 init_flight_time, fp32 time_bias, fp32 z_static, fp32 distance_static)\
 {
@@ -359,29 +359,29 @@ static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory, fp
 
 
 /**
- * @brief Ñ¡Ôñ×îÓÅ»÷´òÄ¿±ê
+ * @brief é€‰æ‹©æœ€ä¼˜å‡»æ‰“ç›®æ ‡
  *
- * @param solve_trajectory µ¯µÀ¼ÆËã½á¹¹Ìå
- * @param vision_data ½ÓÊÕÊÓ¾õÊı¾İ
- * @param optimal_target_position ×îÓÅÄ¿±êÎ»ÖÃ
+ * @param solve_trajectory å¼¹é“è®¡ç®—ç»“æ„ä½“
+ * @param vision_data æ¥æ”¶è§†è§‰æ•°æ®
+ * @param optimal_target_position æœ€ä¼˜ç›®æ ‡ä½ç½®
  */
 static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_data_t* vision_data, target_position_t* optimal_target_position)
 {
-    //¼ÆËãÔ¤²âÊ±¼ä = ÉÏÒ»´ÎµÄ×Óµ¯·ÉĞĞÊ±¼ä + ¹ÌÓĞÆ«ÒÆÊ±¼ä, Ê±¼ä¿ÉÄÜ²»ÕıÈ·£¬µ«¿ÉÒÔ½ÓÊÜ
+    //è®¡ç®—é¢„æµ‹æ—¶é—´ = ä¸Šä¸€æ¬¡çš„å­å¼¹é£è¡Œæ—¶é—´ + å›ºæœ‰åç§»æ—¶é—´, æ—¶é—´å¯èƒ½ä¸æ­£ç¡®ï¼Œä½†å¯ä»¥æ¥å—
     solve_trajectory->predict_time = solve_trajectory->flight_time + solve_trajectory->time_bias;
-    //¼ÆËã×Óµ¯µ½´ïÄ¿±êÊ±µÄyaw½Ç¶È
+    //è®¡ç®—å­å¼¹åˆ°è¾¾ç›®æ ‡æ—¶çš„yawè§’åº¦
     solve_trajectory->target_yaw = vision_data->yaw + vision_data->v_yaw * solve_trajectory->predict_time;
 
-    //¸³Öµ×°¼×°åÊıÁ¿
+    //èµ‹å€¼è£…ç”²æ¿æ•°é‡
     solve_trajectory->armor_num = vision_data->armors_num;
 
-    //Ñ¡ÔñÄ¿±êµÄÊı×é±àºÅ
+    //é€‰æ‹©ç›®æ ‡çš„æ•°ç»„ç¼–å·
     uint8_t select_targrt_num = 0;
 
-    //¼ÆËãËùÓĞ×°¼×°åµÄÎ»ÖÃ
+    //è®¡ç®—æ‰€æœ‰è£…ç”²æ¿çš„ä½ç½®
     for (int i = 0; i < solve_trajectory->armor_num; i++)
     {
-        //ÓÉÓÚ×°¼×°å¾àÀë»úÆ÷ÈËÖĞĞÄ¾àÀë²»Í¬£¬µ«ÊÇÒ»°ãÁ½Á½¶Ô³Æ£¬ËùÒÔ½øĞĞ¼ÆËã×°¼×°åÎ»ÖÃÊ±£¬µÚ0 2¿éÓÃµ±Ç°°ë¾¶£¬µÚ1 3¿éÓÃÉÏÒ»´Î°ë¾¶
+        //ç”±äºè£…ç”²æ¿è·ç¦»æœºå™¨äººä¸­å¿ƒè·ç¦»ä¸åŒï¼Œä½†æ˜¯ä¸€èˆ¬ä¸¤ä¸¤å¯¹ç§°ï¼Œæ‰€ä»¥è¿›è¡Œè®¡ç®—è£…ç”²æ¿ä½ç½®æ—¶ï¼Œç¬¬0 2å—ç”¨å½“å‰åŠå¾„ï¼Œç¬¬1 3å—ç”¨ä¸Šä¸€æ¬¡åŠå¾„
         fp32 r = (i % 2 == 0) ? vision_data->r1 : vision_data->r2;
         solve_trajectory->all_target_position_point[i].yaw = solve_trajectory->target_yaw + i * (ALL_CIRCLE / solve_trajectory->armor_num);
         solve_trajectory->all_target_position_point[i].x = vision_data->x - r * cos(solve_trajectory->all_target_position_point[i].yaw);
@@ -389,8 +389,8 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
         solve_trajectory->all_target_position_point[i].z = (i % 2 == 0) ? vision_data->z : vision_data->z + vision_data->dz;
     }
 
-    // Ñ¡ÔñÓë»úÆ÷ÈË×ÔÉíyaw²îÖµ×îĞ¡µÄÄ¿±ê,ÅÅĞòÑ¡Ôñ×îĞ¡Ä¿±ê
-    solve_trajectory->current_yaw = atan2(vision_data->y, vision_data->x); //Ä¿±êÖĞĞÄµÄyaw½Ç
+    // é€‰æ‹©ä¸æœºå™¨äººè‡ªèº«yawå·®å€¼æœ€å°çš„ç›®æ ‡,æ’åºé€‰æ‹©æœ€å°ç›®æ ‡
+    solve_trajectory->current_yaw = atan2(vision_data->y, vision_data->x); //ç›®æ ‡ä¸­å¿ƒçš„yawè§’
     fp32 yaw_error_min = fabs(solve_trajectory->current_yaw - solve_trajectory->all_target_position_point[0].yaw);
     for (int i = 0; i < solve_trajectory->armor_num; i++)
     {
@@ -403,7 +403,7 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
     }
     // if (yaw_error_min > 0.3)
     // {
-    //     //¸ù¾İËÙ¶È·½ÏòÑ¡ÔñÏÂÒ»¿é×°¼×°å
+    //     //æ ¹æ®é€Ÿåº¦æ–¹å‘é€‰æ‹©ä¸‹ä¸€å—è£…ç”²æ¿
     //     if (vision_data->v_yaw > 0.5){
     //         select_targrt_num += solve_trajectory->armor_num - 1;
     //     }
@@ -415,24 +415,24 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
     //         select_targrt_num -= solve_trajectory->armor_num;
     //     }
     // }
-    // ½«Ñ¡ÔñµÄ×°¼×°åÊı¾İ£¬¿½±´´ò×îÓÅÄ¿±êÖĞÈ¥
+    // å°†é€‰æ‹©çš„è£…ç”²æ¿æ•°æ®ï¼Œæ‹·è´æ‰“æœ€ä¼˜ç›®æ ‡ä¸­å»
     memcpy(optimal_target_position, &solve_trajectory->all_target_position_point[select_targrt_num], sizeof(target_position_t));
 
 }
 
 /**
- * @brief ¼ÆËã×°¼×°åÃé×¼Î»ÖÃ
+ * @brief è®¡ç®—è£…ç”²æ¿ç„å‡†ä½ç½®
  *
- * @param robot_gimbal_aim_vector »úÆ÷ÈËÔÆÌ¨Ãé×¼ÏòÁ¿
- * @param target_position Ä¿±êÎ»ÖÃ
- * @param vx »úÆ÷ÈËÖĞĞÄËÙ¶È
- * @param vy »úÆ÷ÈËÖĞĞÄËÙ¶È
- * @param vz »úÆ÷ÈËÖĞĞÄËÙ¶È
- * @param predict_time Ô¤²âÊ±¼ä
+ * @param robot_gimbal_aim_vector æœºå™¨äººäº‘å°ç„å‡†å‘é‡
+ * @param target_position ç›®æ ‡ä½ç½®
+ * @param vx æœºå™¨äººä¸­å¿ƒé€Ÿåº¦
+ * @param vy æœºå™¨äººä¸­å¿ƒé€Ÿåº¦
+ * @param vz æœºå™¨äººä¸­å¿ƒé€Ÿåº¦
+ * @param predict_time é¢„æµ‹æ—¶é—´
  */
 static void calc_robot_gimbal_aim_vector(vector_t* robot_gimbal_aim_vector, target_position_t* target_position, fp32 vx, fp32 vy, fp32 vz, fp32 predict_time)
 {
-    // ÓÉÓÚÄ¿±êÓë¹Û²âÖĞĞÄ´¦ÓÚÍ¬Ò»Ïµ£¬ËÙ¶ÈÏàÍ¬
+    // ç”±äºç›®æ ‡ä¸è§‚æµ‹ä¸­å¿ƒå¤„äºåŒä¸€ç³»ï¼Œé€Ÿåº¦ç›¸åŒ
     robot_gimbal_aim_vector->x = target_position->x + (fabs(vx) >= 0.02 ? vx : 0) * predict_time;
     robot_gimbal_aim_vector->y = target_position->y + (fabs(vy) >= 0.02 ? vy : 0) * predict_time;
     robot_gimbal_aim_vector->z = target_position->z + (fabs(vz) >= 0.02 ? vz : 0) * predict_time; 
@@ -442,63 +442,63 @@ static void calc_robot_gimbal_aim_vector(vector_t* robot_gimbal_aim_vector, targ
 
 
 /**
- * @brief ¼ÆËã×Óµ¯Âäµã
+ * @brief è®¡ç®—å­å¼¹è½ç‚¹
  * @author yuanluochen
  * 
- * @param solve_trajectory µ¯µÀ¼ÆËã½á¹¹Ìå
- * @param x Ë®Æ½¾àÀë
- * @param bullet_speed µ¯ËÙ
- * @param theta Ñö½Ç
- * @return ×Óµ¯Âäµã
+ * @param solve_trajectory å¼¹é“è®¡ç®—ç»“æ„ä½“
+ * @param x æ°´å¹³è·ç¦»
+ * @param bullet_speed å¼¹é€Ÿ
+ * @param theta ä»°è§’
+ * @return å­å¼¹è½ç‚¹
  */
 static float calc_bullet_drop(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta)
 {
     solve_trajectory->flight_time = (float)((exp(solve_trajectory->k1 * x) - 1) / (solve_trajectory->k1 * bullet_speed * cos(theta)));
 
-    //¼ÆËã×Óµ¯Âäµã¸ß¶È
+    //è®¡ç®—å­å¼¹è½ç‚¹é«˜åº¦
     fp32 bullet_drop_z = (float)(bullet_speed * sin(theta) * solve_trajectory->flight_time - 0.5f * GRAVITY * pow(solve_trajectory->flight_time, 2));
     return bullet_drop_z;
 }
 
 /**
- * @brief ¼ÆËãµ¯µÀÂäµã -- ÍêÈ«¿ÕÆø×èÁ¦Ä£ĞÍ ¸ÃÄ£ĞÍÊÊÓÃÓÚ´óÑö½Ç»÷´òµÄ»÷´ò
+ * @brief è®¡ç®—å¼¹é“è½ç‚¹ -- å®Œå…¨ç©ºæ°”é˜»åŠ›æ¨¡å‹ è¯¥æ¨¡å‹é€‚ç”¨äºå¤§ä»°è§’å‡»æ‰“çš„å‡»æ‰“
  * @author yuanluochen
  * 
- * @param solve_trajectory µ¯µÀ½âËã½á¹¹Ìå
- * @param x ¾àÀë
- * @param bullet_speed µ¯ËÙ
- * @param theta Ñö½Ç
- * @return µ¯µÀÂäµã
+ * @param solve_trajectory å¼¹é“è§£ç®—ç»“æ„ä½“
+ * @param x è·ç¦»
+ * @param bullet_speed å¼¹é€Ÿ
+ * @param theta ä»°è§’
+ * @return å¼¹é“è½ç‚¹
  */
 static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta)
 {
-    //×Óµ¯Âäµã¸ß¶È
+    //å­å¼¹è½ç‚¹é«˜åº¦
     fp32 bullet_drop_z = 0;
-    //¼ÆËã×Ü·ÉĞĞÊ±¼ä
+    //è®¡ç®—æ€»é£è¡Œæ—¶é—´
     solve_trajectory->flight_time = (float)((exp(solve_trajectory->k1 * x) - 1) / (solve_trajectory->k1 * bullet_speed * cos(theta)));
-    // printf("·ÉĞĞÊ±¼ä%f", solve_trajectory->flight_time);
+    // printf("é£è¡Œæ—¶é—´%f", solve_trajectory->flight_time);
     if (theta > 0) 
     {
-        //²¹³¥¿ÕÆø×èÁ¦ÏµÊı ¶ÔÊúÖ±·½Ïò
-        //ÉÏÉı¹ı³ÌÖĞ ×Óµ¯ËÙ¶È·½ÏòÏòÁ¿µÄ½Ç¶ÈÖğ½¥Ç÷½üÓÚ0£¬ÊúÖ±¿ÕÆø×èÁ¦ hat(f_z) = f_z * sin(theta) »áÇ÷½üÓÚÁã £¬Ë®Æ½¿ÕÆø×èÁ¦ hat(f_x) = f_x * cos(theta) »áÇ÷½üÓÚ f_x £¬ËùÒÔÒª¶ÔÊúÖ±¿ÕÆø×èÁ¦ÏµÊı½øĞĞ²¹³¥
+        //è¡¥å¿ç©ºæ°”é˜»åŠ›ç³»æ•° å¯¹ç«–ç›´æ–¹å‘
+        //ä¸Šå‡è¿‡ç¨‹ä¸­ å­å¼¹é€Ÿåº¦æ–¹å‘å‘é‡çš„è§’åº¦é€æ¸è¶‹è¿‘äº0ï¼Œç«–ç›´ç©ºæ°”é˜»åŠ› hat(f_z) = f_z * sin(theta) ä¼šè¶‹è¿‘äºé›¶ ï¼Œæ°´å¹³ç©ºæ°”é˜»åŠ› hat(f_x) = f_x * cos(theta) ä¼šè¶‹è¿‘äº f_x ï¼Œæ‰€ä»¥è¦å¯¹ç«–ç›´ç©ºæ°”é˜»åŠ›ç³»æ•°è¿›è¡Œè¡¥å¿
         fp32 k_z = solve_trajectory->k1 * (1 / sin(theta));
-        // ÉÏÉı¶Î
-        // ³õÊ¼ÊúÖ±·ÉĞĞËÙ¶È
+        // ä¸Šå‡æ®µ
+        // åˆå§‹ç«–ç›´é£è¡Œé€Ÿåº¦
         fp32 v_z_0 = bullet_speed * sin(theta);
-        // ¼ÆËãÉÏÉı¶Î×î´ó·ÉĞĞÊ±¼ä
+        // è®¡ç®—ä¸Šå‡æ®µæœ€å¤§é£è¡Œæ—¶é—´
         fp32 max_flight_up_time = (1 / sqrt(k_z * GRAVITY)) * atan(sqrt(k_z / GRAVITY) * v_z_0);
-        // ÅĞ¶Ï×Ü·ÉĞĞÊ±¼äÊÇ·ñĞ¡ÓÚÉÏÉı×î´ó·ÉĞĞÊ±¼ä
+        // åˆ¤æ–­æ€»é£è¡Œæ—¶é—´æ˜¯å¦å°äºä¸Šå‡æœ€å¤§é£è¡Œæ—¶é—´
         if (solve_trajectory->flight_time <= max_flight_up_time)
         {
-            // ×Óµ¯´æÔÚÉÏÉı¶Î
+            // å­å¼¹å­˜åœ¨ä¸Šå‡æ®µ
             bullet_drop_z = (1 / k_z) * log(cos(sqrt(k_z * GRAVITY) * (max_flight_up_time - solve_trajectory->flight_time)) / cos(sqrt(k_z * GRAVITY) * max_flight_up_time));
         }
         else
         {
-            // ³¬¹ı×î´óÉÏÉı·ÉĞĞÊ±¼ä -- ´æÔÚÏÂ½µ¶Î
-            // ¼ÆËã×î´ó¸ß¶È
+            // è¶…è¿‡æœ€å¤§ä¸Šå‡é£è¡Œæ—¶é—´ -- å­˜åœ¨ä¸‹é™æ®µ
+            // è®¡ç®—æœ€å¤§é«˜åº¦
             fp32 z_max = (1 / (2 * k_z)) * log(1 + (k_z / GRAVITY) * pow(v_z_0, 2));
-            // ¼ÆËãÏÂ½µ
+            // è®¡ç®—ä¸‹é™
             bullet_drop_z = z_max - 0.5f * GRAVITY * pow((solve_trajectory->flight_time - max_flight_up_time), 2);
         }
     }
@@ -512,39 +512,39 @@ static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajecto
 }
 
 /**
- * @brief ¶şÎ¬Æ½Ãæµ¯µÀÄ£ĞÍ£¬¼ÆËãpitchÖáµÄÑö½Ç£¬
+ * @brief äºŒç»´å¹³é¢å¼¹é“æ¨¡å‹ï¼Œè®¡ç®—pitchè½´çš„ä»°è§’ï¼Œ
  * @author yuanluochen
  *
- * @param solve_tragectory µ¯µÀ¼ÆËã½á¹¹Ìå
- * @param x Ë®Æ½¾àÀë
- * @param y ÊúÖ±¾àÀë
- * @param x_offset ÒÔ»úÆ÷ÈË×ªÖá×ø±êÏµÎª¸¸×ø±êÏµ£¬ÒÔ·¢Éä×î´óËÙ¶ÈµãÎª×Ó×ø±êÏµµÄxÖáÆ«ÒÆÁ¿
- * @param y_offset ÒÔ»úÆ÷ÈË×ªÖá×ø±êÏµÎª¸¸×ø±êÏµ£¬ÒÔ·¢Éä×î´óËÙ¶ÈµãÎª×Ó×ø±êÏµµÄyÖáÆ«ÒÆÁ¿
- * @param bullet_speed µ¯ËÙ
- * @param mode ¼ÆËãÄ£Ê½£º
-          ÖÃ 1 ÍêÈ«¿ÕÆø×èÁ¦Ä£ĞÍ
-          ÖÃ 0 µ¥·½Ïò¿ÕÆø×èÁ¦Ä£ĞÍ
- * @return ·µ»ØpitchÖáÊıÖµ
+ * @param solve_tragectory å¼¹é“è®¡ç®—ç»“æ„ä½“
+ * @param x æ°´å¹³è·ç¦»
+ * @param y ç«–ç›´è·ç¦»
+ * @param x_offset ä»¥æœºå™¨äººè½¬è½´åæ ‡ç³»ä¸ºçˆ¶åæ ‡ç³»ï¼Œä»¥å‘å°„æœ€å¤§é€Ÿåº¦ç‚¹ä¸ºå­åæ ‡ç³»çš„xè½´åç§»é‡
+ * @param y_offset ä»¥æœºå™¨äººè½¬è½´åæ ‡ç³»ä¸ºçˆ¶åæ ‡ç³»ï¼Œä»¥å‘å°„æœ€å¤§é€Ÿåº¦ç‚¹ä¸ºå­åæ ‡ç³»çš„yè½´åç§»é‡
+ * @param bullet_speed å¼¹é€Ÿ
+ * @param mode è®¡ç®—æ¨¡å¼ï¼š
+          ç½® 1 å®Œå…¨ç©ºæ°”é˜»åŠ›æ¨¡å‹
+          ç½® 0 å•æ–¹å‘ç©ºæ°”é˜»åŠ›æ¨¡å‹
+ * @return è¿”å›pitchè½´æ•°å€¼
  */
 static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajectory, fp32 x, fp32 z, fp32 x_offset, fp32 z_offset, int mode)
 {
     int count = 0;
-    // ¼ÆËãÂäµã¸ß¶È
+    // è®¡ç®—è½ç‚¹é«˜åº¦
     float bullet_drop_z = 0;
-    //ÔÆÌ¨Ãé×¼ÏòÁ¿
+    //äº‘å°ç„å‡†å‘é‡
     float aim_z = z;
 
-    // ¶şÎ¬Æ½ÃæµÄ´ò»÷½Ç
+    // äºŒç»´å¹³é¢çš„æ‰“å‡»è§’
     float theta = 0;
-    // ¼ÆËãÖµÓëÕæÊµÖµÖ®¼äµÄÎó²î
+    // è®¡ç®—å€¼ä¸çœŸå®å€¼ä¹‹é—´çš„è¯¯å·®
     float calc_and_actual_error = 0;
-    // ±ÈÀıµü´ú·¨
+    // æ¯”ä¾‹è¿­ä»£æ³•
     for (int i = 0; i < MAX_ITERATE_COUNT; i++)
     {
-        // ¼ÆËãÑö½Ç
+        // è®¡ç®—ä»°è§’
         theta = atan2(aim_z, x);
-        // ×ø±êÏµ±ä»»£¬´Ó»úÆ÷ÈË×ªÖáÏµ±äÎª·¢Éä×î´óËÙ¶ÈÎ»ÖÃ×ø±êÏµ
-        // ¼ÆËã×Óµ¯Âäµã¸ß¶È
+        // åæ ‡ç³»å˜æ¢ï¼Œä»æœºå™¨äººè½¬è½´ç³»å˜ä¸ºå‘å°„æœ€å¤§é€Ÿåº¦ä½ç½®åæ ‡ç³»
+        // è®¡ç®—å­å¼¹è½ç‚¹é«˜åº¦
         if (mode == 1){
             bullet_drop_z =
               calc_bullet_drop_in_complete_air(
@@ -564,20 +564,20 @@ static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajecto
               (arm_sin_f32(theta) * x_offset + arm_cos_f32(theta) * z_offset);
         }
             
-        // ¼ÆËãÎó²î
+        // è®¡ç®—è¯¯å·®
         calc_and_actual_error = z - bullet_drop_z;
-        // ¶ÔÃé×¼¸ß¶È½øĞĞ²¹³¥
+        // å¯¹ç„å‡†é«˜åº¦è¿›è¡Œè¡¥å¿
         aim_z += calc_and_actual_error * ITERATE_SCALE_FACTOR;
-        // printf("µÚ%d´ÎÃé×¼£¬·¢ÉäÏµx:%f, z²¹³¥%f, z·¢ÉäÏµÂäµã%f ,z»úÌåÏµÂäµã%f\n", count, x - (arm_cos_f32(theta) * x_offset), (arm_sin_f32(theta) * x_offset + arm_cos_f32(theta) * z_offset), bullet_drop_z - (arm_sin_f32(theta) * x_offset + arm_cos_f32(theta) * z_offset), bullet_drop_z);
-        // ÅĞ¶ÏÎó²îÊÇ·ñ·ûºÏ¾«¶ÈÒªÇó
+        // printf("ç¬¬%dæ¬¡ç„å‡†ï¼Œå‘å°„ç³»x:%f, zè¡¥å¿%f, zå‘å°„ç³»è½ç‚¹%f ,zæœºä½“ç³»è½ç‚¹%f\n", count, x - (arm_cos_f32(theta) * x_offset), (arm_sin_f32(theta) * x_offset + arm_cos_f32(theta) * z_offset), bullet_drop_z - (arm_sin_f32(theta) * x_offset + arm_cos_f32(theta) * z_offset), bullet_drop_z);
+        // åˆ¤æ–­è¯¯å·®æ˜¯å¦ç¬¦åˆç²¾åº¦è¦æ±‚
         count++;
         if (fabs(calc_and_actual_error) < PRECISION)
         {
             break;
         }
     }
-//    printf("x = %f, Ô­Ê¼pitch = %f, pitch = %f, µü´ú´ÎÊı = %d\n", x, -atan2(z, x) * 180 / 3.14 , -(theta * 180 / 3.14), count);
-    //ÓÉÓÚÎªÓÒÊÖÏµ£¬thetaÎªÏòÏÂÎªÕı£¬ËùÒÔÖÃ¸º
+//    printf("x = %f, åŸå§‹pitch = %f, pitch = %f, è¿­ä»£æ¬¡æ•° = %d\n", x, -atan2(z, x) * 180 / 3.14 , -(theta * 180 / 3.14), count);
+    //ç”±äºä¸ºå³æ‰‹ç³»ï¼Œthetaä¸ºå‘ä¸‹ä¸ºæ­£ï¼Œæ‰€ä»¥ç½®è´Ÿ
     return -theta;
 }
 
@@ -586,7 +586,7 @@ static vision_receive_t* get_vision_receive_point(void)
     return &vision_receive;
 }
 
-//»ñÈ¡µ±Ç°ÊÓ¾õÊÇ·ñÊ¶±ğµ½Ä¿±ê
+//è·å–å½“å‰è§†è§‰æ˜¯å¦è¯†åˆ«åˆ°ç›®æ ‡
 bool_t judge_vision_appear_target(void)
 {
     return vision_control.vision_target_appear_state == TARGET_APPEAR;
@@ -594,14 +594,14 @@ bool_t judge_vision_appear_target(void)
 
 
 
-// »ñÈ¡ÉÏÎ»»úÔÆÌ¨ÃüÁî
+// è·å–ä¸Šä½æœºäº‘å°å‘½ä»¤
 const gimbal_vision_control_t *get_vision_gimbal_point(void)
 {
     return &vision_control.gimbal_vision_control;
 }
 
 
-// »ñÈ¡ÉÏÎ»»ú·¢ÉäÃüÁî
+// è·å–ä¸Šä½æœºå‘å°„å‘½ä»¤
 const shoot_vision_control_t *get_vision_shoot_point(void)
 {
     return &vision_control.shoot_vision_control;
