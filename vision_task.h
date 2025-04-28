@@ -20,14 +20,29 @@
 #include "referee.h"
 #include "remote_control.h"
 
+/*人工修正的参数*/
 
-//允许发弹角度误差 rad
-#define ALLOW_ATTACK_ERROR 0.04f
+//重力加速度
+#define GRAVITY 9.75225639f
+//当前弹速--写函数/写常数
+#define CUR_BULLET_SPEED 24.0f
+//云台转轴中心到枪口的竖直距离
+#define Z_STATIC 0.0f
+//云台转轴中心到发射最大初速度点的距离
+#define DISTANCE_STATIC 0.0483f
+//空气阻力系数
+#define AIR_K1 0.15f
+
+/*           */
+
+
 //允许发弹距离 m
 #define ALLOW_ATTACK_DISTANCE 4.5f
 //允许发弹概率
 #define ALLOE_ATTACK_P 5.0f
 
+//固有时间偏移
+#define TIME_BIAS 6
 
 //延时等待
 #define VISION_SEND_TASK_INIT_TIME 401
@@ -47,18 +62,18 @@
 
 
 //最小设定弹速
-#define MIN_SET_BULLET_SPEED 22.0f
+#define MIN_SET_BULLET_SPEED 19.0f
 //最大设定弹速
-#define MAX_SET_BULLET_SPEED 24.9f
+#define MAX_SET_BULLET_SPEED 25.0f
 //初始设定弹速
 #define BEGIN_SET_BULLET_SPEED 23.8f
+
 
 //大装甲板宽度
 #define SMALL_ARMOR_WIDTH 0.135f
 //小装甲板宽度
 #define LARGE_ARM0R_WIDTH 0.230f
-//空气阻力系数
-#define AIR_K1 0.15f
+
 //初始子弹飞行迭代数值
 #define T_0 0.0f
 //迭代精度
@@ -67,16 +82,9 @@
 #define MIN_DELTAT 0.001f
 //最大迭代次数
 #define MAX_ITERATE_COUNT 30
-//视觉计算时间
-#define VISION_CALC_TIME 0.003f
 
 //比例补偿器比例系数
 #define ITERATE_SCALE_FACTOR 0.9f
-//重力加速度
-#define GRAVITY 9.75225639f
-
-//固有时间偏移
-#define TIME_BIAS 6
 
 //ms转s
 #ifndef TIME_MS_TO_S
@@ -88,10 +96,6 @@
 #define ALL_CIRCLE (2 * PI)
 
 // 击打敌方机器人0.1
-//imu到枪口的竖直距离
-#define Z_STATIC (0.0f)
-//枪口前推距离
-#define DISTANCE_STATIC (0.0483f)
 //初始飞行时间
 #define INIT_FILIGHT_TIME 0.5f
 
@@ -288,7 +292,6 @@ typedef struct
     //预测时间
     fp32 predict_time;
 
-
     // 目标yaw
     fp32 target_yaw;
 
@@ -300,21 +303,27 @@ typedef struct
     //枪口前推距离
     fp32 distance_static;
 
-    //所有装甲板位置指针
-    target_position_t* all_target_position_point;
+    //所有装甲板位置
+    target_position_t all_target_position_point[4];
 
 } solve_trajectory_t;
 
-
+//均值弹速
+#define BULLET_SPEED_SIZE 5
+typedef struct{
+    fp32 bullet_speed[BULLET_SPEED_SIZE];
+    fp32 est_bullet_speed;
+    int full_flag;
+    int pos;
+}bullet_speed_t;
 
 // 视觉任务结构体
 typedef struct
 {
     // 绝对角指针
     const INS_t* vision_angle_point;
-    // const gimbal_control_t* gimbal_data_point;
-    // 当前弹速
-    fp32 bullet_speed;
+    // 弹速
+    bullet_speed_t bullet_speed;
     // 检测装甲板的颜色(敌方装甲板的颜色)
     uint8_t detect_armor_color;
 

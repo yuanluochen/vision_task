@@ -19,7 +19,8 @@
 #include "gimbal_behaviour.h"
 #include "gimbal_task.h"
 #include "referee.h"
-#include <stdio.h>
+// #include <stdio.h>
+// #include <string.h>
 
 
 uint8_t target_appear_flag = 0;
@@ -51,7 +52,8 @@ static float calc_bullet_drop(solve_trajectory_t* solve_trajectory, float x, flo
 static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta);
 // 二维平面弹道模型，计算pitch轴的高度
 static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajectory, fp32 x, fp32 z, fp32 x_offset, fp32 z_offset, int mode);
-
+//更新弹速，并估计当前弹速
+static void update_bullet_speed(bullet_speed_t *bullet_speed, fp32 cur_bullet_speed);
 
 // 获取接收数据包指针
 static vision_receive_t* get_vision_receive_point(void);
@@ -61,7 +63,7 @@ vision_control_t vision_control = { 0 };
 // 视觉接收结构体
 vision_receive_t vision_receive = { 0 };
 
-fp32 time_bias = 10.0f;
+fp32 time_bias = 15.0f;
 
 void vision_task(void const* pvParameters)
 {
@@ -107,18 +109,23 @@ static void vision_task_init(vision_control_t* init)
     //初始化一些基本的弹道参数
     solve_trajectory_param_init(&init->solve_trajectory, AIR_K1, INIT_FILIGHT_TIME, TIME_MS_TO_S(time_bias), Z_STATIC, DISTANCE_STATIC);
     //初始化弹速
-    init->bullet_speed = BEGIN_SET_BULLET_SPEED;
+    init->bullet_speed.pos = 0;
+    init->bullet_speed.est_bullet_speed = BEGIN_SET_BULLET_SPEED;
+    init->bullet_speed.full_flag = 0;
+    memset(init->bullet_speed.bullet_speed, 0, sizeof(init->bullet_speed.bullet_speed[0]) * BULLET_SPEED_SIZE);
     //初始化视觉目标状态为未识别到目标
     init->vision_target_appear_state = TARGET_UNAPPEAR;
-
+    
     //更新数据
     vision_task_feedback_update(init);
 }
+// extern shoot_date;
 
 static void vision_task_feedback_update(vision_control_t* update)
 {
     //更新弹速
-    update->solve_trajectory.current_bullet_speed = update->bullet_speed;
+    update_bullet_speed(&update->bullet_speed, CUR_BULLET_SPEED);
+    update->solve_trajectory.current_bullet_speed = update->bullet_speed.est_bullet_speed;
     //获取目标数据
     if (update->vision_receive_point->receive_state == UNLOADED)
     {
@@ -129,6 +136,27 @@ static void vision_task_feedback_update(vision_control_t* update)
     }
 }
 
+static void update_bullet_speed(bullet_speed_t *bullet_speed, fp32 cur_bullet_speed){
+    static fp32 last_bullet_speed = 0;
+    //添加弹速
+    if (cur_bullet_speed != 0 && cur_bullet_speed != last_bullet_speed && 
+        cur_bullet_speed >= MIN_SET_BULLET_SPEED && cur_bullet_speed <= MAX_SET_BULLET_SPEED){
+        bullet_speed->bullet_speed[(bullet_speed->pos++) % BULLET_SPEED_SIZE] = cur_bullet_speed;
+        last_bullet_speed = cur_bullet_speed;
+    }
+    //判断是否已满
+    if (bullet_speed->full_flag == 0 && bullet_speed->pos == BULLET_SPEED_SIZE - 1){
+        bullet_speed->full_flag = 1;
+    }
+    //估计弹速
+    fp32 sum = 0;;
+    for (int i = 0; 
+        (bullet_speed->full_flag == 1 && i < BULLET_SPEED_SIZE) || (bullet_speed->full_flag == 0 && i <= bullet_speed->pos);
+        i++){
+            sum += bullet_speed->bullet_speed[i];
+        }
+    bullet_speed->est_bullet_speed = sum / BULLET_SPEED_SIZE;
+}
 
 
 static void vision_set_target_armor_color(vision_control_t* set_detect_color, robot_armor_color_e enemy_armor_color)
@@ -325,7 +353,6 @@ static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory, fp
     solve_trajectory->time_bias = time_bias;
     solve_trajectory->z_static = z_static;
     solve_trajectory->distance_static = distance_static;
-    solve_trajectory->all_target_position_point = NULL;
     solve_trajectory->current_bullet_speed = MIN_SET_BULLET_SPEED;
 }
 
@@ -348,12 +375,6 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
     //赋值装甲板数量
     solve_trajectory->armor_num = vision_data->armors_num;
 
-    //开辟装甲板数量的位置变量的空间
-    if (solve_trajectory->all_target_position_point == NULL)
-    {
-        solve_trajectory->all_target_position_point = malloc(solve_trajectory->armor_num * sizeof(target_position_t));
-    }
-
     //选择目标的数组编号
     uint8_t select_targrt_num = 0;
 
@@ -369,8 +390,8 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
     }
 
     // 选择与机器人自身yaw差值最小的目标,排序选择最小目标
-    fp32 current_yaw = atan2(vision_data->y, vision_data->x); //目标中心的yaw角
-    fp32 yaw_error_min = fabsf(current_yaw - solve_trajectory->all_target_position_point[0].yaw);
+    solve_trajectory->current_yaw = atan2(vision_data->y, vision_data->x); //目标中心的yaw角
+    fp32 yaw_error_min = fabs(solve_trajectory->current_yaw - solve_trajectory->all_target_position_point[0].yaw);
     for (int i = 0; i < solve_trajectory->armor_num; i++)
     {
         fp32 yaw_error_temp = fabsf(solve_trajectory->current_yaw - solve_trajectory->all_target_position_point[i].yaw);
@@ -380,12 +401,23 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
             select_targrt_num = i;
         }
     }
+    // if (yaw_error_min > 0.3)
+    // {
+    //     //根据速度方向选择下一块装甲板
+    //     if (vision_data->v_yaw > 0.5){
+    //         select_targrt_num += solve_trajectory->armor_num - 1;
+    //     }
+    //     else if (vision_data->v_yaw < -0.5){
+    //         select_targrt_num += 1;
+    //     }
+
+    //     if (select_targrt_num >= solve_trajectory->armor_num) {
+    //         select_targrt_num -= solve_trajectory->armor_num;
+    //     }
+    // }
     // 将选择的装甲板数据，拷贝打最优目标中去
     memcpy(optimal_target_position, &solve_trajectory->all_target_position_point[select_targrt_num], sizeof(target_position_t));
-    //释放开辟的内存
-    free(solve_trajectory->all_target_position_point);
-    //指针置空
-    solve_trajectory->all_target_position_point = NULL;
+
 }
 
 /**
@@ -401,9 +433,9 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_d
 static void calc_robot_gimbal_aim_vector(vector_t* robot_gimbal_aim_vector, target_position_t* target_position, fp32 vx, fp32 vy, fp32 vz, fp32 predict_time)
 {
     // 由于目标与观测中心处于同一系，速度相同
-    robot_gimbal_aim_vector->x = target_position->x + vx * predict_time;
-    robot_gimbal_aim_vector->y = target_position->y + vy * predict_time;
-    robot_gimbal_aim_vector->z = target_position->z + vz * predict_time;
+    robot_gimbal_aim_vector->x = target_position->x + (fabs(vx) >= 0.02 ? vx : 0) * predict_time;
+    robot_gimbal_aim_vector->y = target_position->y + (fabs(vy) >= 0.02 ? vy : 0) * predict_time;
+    robot_gimbal_aim_vector->z = target_position->z + (fabs(vz) >= 0.02 ? vz : 0) * predict_time; 
 }
 
 
