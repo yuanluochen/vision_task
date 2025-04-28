@@ -24,7 +24,7 @@
 
 //重力加速度
 #define GRAVITY 9.75225639f
-//当前弹速--写函数/写常数
+//当前弹速--写函数(不带"";"的函数)/写常数
 #define CUR_BULLET_SPEED 24.0f
 //云台转轴中心到枪口的竖直距离
 #define Z_STATIC 0.0f
@@ -95,7 +95,6 @@
 //全圆弧度
 #define ALL_CIRCLE (2 * PI)
 
-// 击打敌方机器人0.1
 //初始飞行时间
 #define INIT_FILIGHT_TIME 0.5f
 
