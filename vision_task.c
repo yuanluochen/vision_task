@@ -45,7 +45,7 @@ static float calc_bullet_drop(solve_trajectory_t* solve_trajectory, float x, flo
 // 计算弹道落点 -- 完全空气阻力模型
 static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta);
 // 计算弹道落点 -- RK4
-static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float x, float y, float bullet_speed, float theta);
+static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float x, float z, float bullet_speed, float theta);
 // 二维平面弹道模型，计算pitch轴的高度
 static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajectory, fp32 x, fp32 z, fp32 x_offset, fp32 z_offset, fp32 theta_offset, int mode);
 //更新弹速，并估计当前弹速
@@ -236,7 +236,7 @@ static void vision_shoot_judge(vision_control_t* shoot_judge)
             // 判断观测器是否收敛
             if (shoot_judge->vision_receive_point->receive_packet.p < ALLOE_ATTACK_P){
                 // 根据敌方机器人半径和当前瞄准位置判断是否过偏
-                if (fabs(shoot_judge->body_to_enemy_robot_yaw - shoot_judge->vision_angle_point->Yaw) <= fabs(atan2(shoot_judge->target_data.r1 - 0.1, target_distance))){
+                if (fabs(shoot_judge->body_to_enemy_robot_yaw - shoot_judge->vision_angle_point->Yaw) <= fabs(atan2(shoot_judge->target_data.r1 - 0.11, target_distance))){
                     // 根据装甲板大小和距离判断允许发弹误差角
                     allow_attack_error_pitch = atan2((ARMOR_HIGH / 2.0f) - 0.03, target_distance);
                     if (shoot_judge->target_data.id == ARMOR_HERO){
@@ -376,13 +376,12 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory,
         .y = vision_data->y + solve_trajectory->predict_time * vision_data->vy,
         .z = vision_data->z + solve_trajectory->predict_time * vision_data->vz,
     };
-    // 云台运动时间近似补偿
+    // 云台运动时间近似补偿->主要补偿平移
     fp32 predict_time_offset = fabs(atan2f(robot_center.y, robot_center.x)- cur_yaw) * TRACK_GIMBAL_COTROL_OFFSET_K;
     solve_trajectory->predict_time += predict_time_offset;
 
     robot_center.x += vision_data->vx * predict_time_offset;
     robot_center.y += vision_data->vy * predict_time_offset;
-    // robot_center.z += vision_data->vz * predict_time_offset;
 
     //计算子弹到达目标时的yaw角度
     solve_trajectory->target_yaw = vision_data->yaw + vision_data->v_yaw * solve_trajectory->predict_time;
@@ -413,16 +412,16 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory,
             select_targrt_num = i;
         }
     }
+    fp32 distance = sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2));
     /*迎着打--，去掉跟着打*/
-    if (yaw_error_min > 0.3){
+    if (yaw_error_min > fabs(atan2(vision_data->r2 - 0.06f, distance))){
         //根据速度方向选择下一块装甲板
-        if (vision_data->v_yaw > 0.5){
+        if (vision_data->v_yaw > 1.0f){
             select_targrt_num += solve_trajectory->armor_num - 1;
         }
-        else if (vision_data->v_yaw < -0.5){
+        else if (vision_data->v_yaw < -1.0f){
             select_targrt_num += 1;
         }
-
         if (select_targrt_num >= solve_trajectory->armor_num) {
             select_targrt_num -= solve_trajectory->armor_num;
         }
@@ -502,18 +501,17 @@ static float calc_bullet_drop_in_complete_air(solve_trajectory_t* solve_trajecto
  * 
  * @param solve_trajectory 弹道解算结构体
  * @param x 距离
- * @param y 高度
+ * @param z 高度
  * @param bullet_speed 弹速
  * @param theta 仰角
  * @return 弹道落点
  */
-static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float x, float y, float bullet_speed, float theta){
+static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float x, float z, float bullet_speed, float theta){
     //算一个飞行时间，用完全空气阻力模型拟的，给自瞄预测用的
     solve_trajectory->flight_time = (float)((exp(solve_trajectory->k1 * x) - 1) / (solve_trajectory->k1 * bullet_speed * cos(theta)));
-    // TODO:可以考虑将迭代起点改为世界坐标系下的枪口位置
     // 初始化
     fp32 cur_x = x;
-    fp32 cur_y = y;
+    fp32 cur_z = z;
     fp32 p = tan(theta / 180 * PI);
     fp32 v = bullet_speed;
     fp32 u = v / sqrt(1 + pow(p, 2));
@@ -541,9 +539,9 @@ static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float
         p += (delta_x / 6) * (k1_p + 2 * k2_p + 2 * k3_p + k4_p);
 
         cur_x += delta_x;
-        cur_y += p * delta_x;
+        cur_z += p * delta_x;
     }
-    return cur_y;
+    return cur_z;
 }
 
 /**
@@ -552,9 +550,10 @@ static float calc_bullet_drop_in_RK4(solve_trajectory_t* solve_trajectory, float
  *
  * @param solve_tragectory 弹道计算结构体
  * @param x 水平距离
- * @param y 竖直距离
+ * @param z 竖直距离
  * @param x_offset 以机器人转轴坐标系为父坐标系，以发射最大速度点为子坐标系的x轴偏移量
- * @param y_offset 以机器人转轴坐标系为父坐标系，以发射最大速度点为子坐标系的y轴偏移量
+ * @param z_offset 以机器人转轴坐标系为父坐标系，以发射最大速度点为子坐标系的y轴偏移量
+ * @param theta_offset 枪管装歪了，装配误差补偿
  * @param bullet_speed 弹速
  * @param mode 计算模式：
           置 0 单方向空气阻力模型
@@ -569,9 +568,6 @@ static float calc_target_position_pitch_angle(solve_trajectory_t* solve_trajecto
     float bullet_drop_z = 0;
     //云台瞄准向量
     float aim_z = z;
-    // 坐标变换量
-    float gimbal2aim_x = x;
-    float gimbal2aim_z = z;
 
     // 二维平面的打击角
     float theta = 0;
