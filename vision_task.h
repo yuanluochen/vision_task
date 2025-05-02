@@ -17,32 +17,33 @@
 #include "dma.h"
 #include "INS_task.h"
 #include "arm_math.h"
-#include "referee.h"
 #include "remote_control.h"
 
-/*人工修正的参数*/
+/*  **人工修正的参数**  */
 
-//重力加速度
-#define GRAVITY 9.75225639f
-//当前弹速--写函数(不带"";"的函数)/写常数
-#define CUR_BULLET_SPEED 24.0f
 //云台转轴中心到枪口的竖直距离
 #define Z_STATIC 0.0f
 //云台转轴中心到发射最大初速度点的距离
 #define DISTANCE_STATIC 0.0483f
-//空气阻力系数
-#define AIR_K1 0.15f
+//枪管pitch歪(相较于正确安装的误差)
+#define PITCH_STATIC 0.0f
+//子弹类型 小弹丸 0，大弹丸 1, 发光大弹丸 2
+#define BULLET_TYPE 0
 
-/*           */
-
-
-//允许发弹距离 m
-#define ALLOW_ATTACK_DISTANCE 4.5f
-//允许发弹概率
-#define ALLOE_ATTACK_P 5.0f
+//重力加速度
+#define GRAVITY 9.75225639f
 
 //固有时间偏移
-#define TIME_BIAS 6
+#define TIME_BIAS 35
+//根据云台控制器效果进行补偿
+#define TRACK_GIMBAL_COTROL_OFFSET_K 0.1f
+
+//允许发弹距离 m
+#define ALLOW_ATTACK_DISTANCE 5.0f
+//允许发弹的kf收敛值
+#define ALLOE_ATTACK_P 3.0f
+
+/*    **      **     */
 
 //延时等待
 #define VISION_SEND_TASK_INIT_TIME 401
@@ -54,12 +55,22 @@
 //系统延时时间
 #define VISION_CONTROL_TIME_MS 1
 
+#if (BULLET_TYPE == 0)
+// 空气阻力系数简化版
+#define AIR_K1 0.019
+#elif (BULLET_TYPE == 1)
+// 空气阻力系数简化版
+#define AIR_K1 0.00556
+#else
+// 空气阻力系数简化版
+#define AIR_K1 0.00530
+#endif
+
 //弧度制转角度制
 #define RADIAN_TO_ANGLE (360 / (2 * PI))
 
 //机器人红蓝id分界值，大于该值则机器人自身为蓝色，小于这个值机器人自身为红色
-#define ROBOT_RED_AND_BLUE_DIVIDE_VALUE 100
-
+#define ROBOT_RED_AND_BLUE_DIVIDE_VALUE 100.0f
 
 //最小设定弹速
 #define MIN_SET_BULLET_SPEED 19.0f
@@ -68,11 +79,12 @@
 //初始设定弹速
 #define BEGIN_SET_BULLET_SPEED 23.8f
 
-
 //大装甲板宽度
 #define SMALL_ARMOR_WIDTH 0.135f
 //小装甲板宽度
 #define LARGE_ARM0R_WIDTH 0.230f
+//装甲板高度
+#define ARMOR_HIGH 0.055f
 
 //初始子弹飞行迭代数值
 #define T_0 0.0f
@@ -82,23 +94,20 @@
 #define MIN_DELTAT 0.001f
 //最大迭代次数
 #define MAX_ITERATE_COUNT 30
-
-//比例补偿器比例系数
+//比例迭代器比例系数
 #define ITERATE_SCALE_FACTOR 0.9f
+//RK4迭代次数--越大越精准
+#define RK_ITER 60
 
 //ms转s
 #ifndef TIME_MS_TO_S
 #define TIME_MS_TO_S(ms) (fp32)(ms / 1000.0f)
-
 #endif // !TIME_MS_TO_S(x)
 
 //全圆弧度
 #define ALL_CIRCLE (2 * PI)
-
 //初始飞行时间
 #define INIT_FILIGHT_TIME 0.5f
-
-
 //最大未接受数据的时间 s
 #define MAX_NOT_RECEIVE_DATA_TIME 3.0f
 
@@ -250,7 +259,7 @@ typedef struct
     // 本次云台pitch轴数值
     fp32 gimbal_pitch;
     //角速度前馈
-    fp32 feed_forward_omega;
+    // fp32 feed_forward_omega;
 } gimbal_vision_control_t;
 
 // 哨兵发射电机运动控制命令
@@ -271,17 +280,11 @@ typedef struct
 } target_position_t;
 
 
-
-
 //弹道计算结构体
 typedef struct
 {
     // 当前弹速
     fp32 current_bullet_speed;
-    // 当前pitch
-    fp32 current_pitch;
-    // 当前yaw
-    fp32 current_yaw;
     // 弹道系数
     fp32 k1;
     //子弹飞行时间
@@ -293,14 +296,14 @@ typedef struct
 
     // 目标yaw
     fp32 target_yaw;
-
     // 装甲板数量
     uint8_t armor_num;
-
     //IMU到yaw轴电机的竖直距离
     fp32 z_static;
     //枪口前推距离
     fp32 distance_static;
+    //由于枪管安装问题产生的pitch的安装误差
+    fp32 pitch_static;
 
     //所有装甲板位置
     target_position_t all_target_position_point[4];
@@ -312,8 +315,6 @@ typedef struct
 typedef struct{
     fp32 bullet_speed[BULLET_SPEED_SIZE];
     fp32 est_bullet_speed;
-    int full_flag;
-    int pos;
 }bullet_speed_t;
 
 // 视觉任务结构体
@@ -333,14 +334,11 @@ typedef struct
 
     //弹道解算
     solve_trajectory_t solve_trajectory;
-    //目标位置
-    target_position_t target_position;
-
-
-    const ext_shoot_data_t* shoot_data_point;
 
     // 机器人云台瞄准位置向量
     vector_t robot_gimbal_aim_vector;
+    // 以机器人自身为原点在惯性系下敌方机器人的yaw角
+    fp32 body_to_enemy_robot_yaw;
 
     //接收的数据包指针
     vision_receive_t* vision_receive_point;
@@ -349,49 +347,15 @@ typedef struct
 
     // 视觉目标状态
     vision_target_appear_state_e vision_target_appear_state;
-    // 目标装甲板编号
-    armor_id_e target_armor_id;
     // 云台电机运动命令
     gimbal_vision_control_t gimbal_vision_control;
     // 发射机构发射命令
     shoot_vision_control_t shoot_vision_control;
 
-
-
 } vision_control_t;
 
 // 视觉数据处理任务
 void vision_task(void const *pvParameters);
-
-// 获取上位机云台命令
-const gimbal_vision_control_t *get_vision_gimbal_point(void);
-
-// 获取上位机跟随命令
-const uint8_t *get_vision_target_follow_point(void);
-
-// 获取上位机发射命令
-const shoot_vision_control_t *get_vision_shoot_point(void);
-
-
-
-/**
- * @brief 判断视觉是否识别到目标
- *
- * @return bool_t 返回1 识别到目标 返回0 未识别到目标
- */
-bool_t judge_vision_appear_target(void);
-
-
-
-/**
- * @brief 分析视觉原始增加数据，根据原始数据，判断是否要进行发射，判断yaw轴pitch的角度，如果在一定范围内，则计算值增加，增加到一定数值则判断发射，如果yaw轴pitch轴角度大于该范围，则计数归零
- *
- * @param shoot_judge 视觉结构体
- * @param vision_begin_add_yaw_angle 上位机视觉yuw轴原始增加角度
- * @param vision_begin_add_pitch_angle 上位机视觉pitch轴原始增加角度
- * @param target_distance 目标距离
- */
-void vision_shoot_judge(vision_control_t* shoot_judge, fp32 vision_begin_add_yaw_angle, fp32 vision_begin_add_pitch_angle, fp32 target_distance);
 
 /**
  * @brief 接收数据解码
@@ -408,10 +372,24 @@ void receive_decode(uint8_t* buf, uint32_t len);
  */
 void send_packet(vision_control_t* send);
 
-
-
 extern vision_control_t vision_control;
 extern vision_receive_t vision_receive;
-extern uint8_t follow;
+
+/*       对外接口      */
+
+// 获取上位机云台命令
+const gimbal_vision_control_t *get_vision_gimbal_point(void);
+
+// 获取上位机发射命令
+const shoot_vision_control_t *get_vision_shoot_point(void);
+
+/**
+ * @brief 判断视觉是否识别到目标
+ *
+ * @return bool_t 返回1 识别到目标 返回0 未识别到目标
+ */
+bool_t judge_vision_appear_target(void);
+
+/*    **      **     */
 
 #endif // !VISION_TASK_H
