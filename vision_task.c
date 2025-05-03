@@ -234,7 +234,7 @@ static void vision_shoot_judge(vision_control_t* shoot_judge)
         // 判断目标距离是否过于远
         if (target_distance <= ALLOW_ATTACK_DISTANCE){
             // 判断观测器是否收敛
-            if (shoot_judge->vision_receive_point->receive_packet.p < ALLOE_ATTACK_P){
+            if (shoot_judge->target_data.p < ALLOE_ATTACK_P){
                 // 根据敌方机器人半径和当前瞄准位置判断是否过偏
                 if (fabs(shoot_judge->body_to_enemy_robot_yaw - shoot_judge->vision_angle_point->Yaw) <= fabs(atan2(shoot_judge->target_data.r1 - 0.11, target_distance))){
                     // 根据装甲板大小和距离判断允许发弹误差角
@@ -412,21 +412,23 @@ static void select_optimal_target(solve_trajectory_t* solve_trajectory,
             select_targrt_num = i;
         }
     }
-    fp32 distance = sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2));
-    /*迎着打--，去掉跟着打*/
-    if (yaw_error_min > fabs(atan2(vision_data->r2 - 0.06f, distance))){
-        //根据速度方向选择下一块装甲板
-        if (vision_data->v_yaw > 1.0f){
-            select_targrt_num += solve_trajectory->armor_num - 1;
-        }
-        else if (vision_data->v_yaw < -1.0f){
-            select_targrt_num += 1;
-        }
-        if (select_targrt_num >= solve_trajectory->armor_num) {
-            select_targrt_num -= solve_trajectory->armor_num;
+
+    // 根据速度方向选择下一块装甲板
+    if (SELECT_ARMOR_DIR == 1 && vision_data->p < EKF_CONVERGENCE_P && fabs(vision_data->v_yaw) > SELECT_ARMOR_V_YAW_THRES){
+        fp32 distance = sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2));
+        if (yaw_error_min > fabs(atan2(vision_data->r1 - 0.07f, distance))){
+            if (vision_data->v_yaw > SELECT_ARMOR_V_YAW_THRES){
+                select_targrt_num += solve_trajectory->armor_num - 1;
+            }
+            else if (vision_data->v_yaw < -SELECT_ARMOR_V_YAW_THRES){
+                select_targrt_num += 1;
+            }
+            if (select_targrt_num >= solve_trajectory->armor_num){
+                select_targrt_num -= solve_trajectory->armor_num;
+            }
         }
     }
-    /**     */
+    
     // 将选择的装甲板数据，拷贝到云台瞄准向量
     robot_gimbal_aim_vector->x = solve_trajectory->all_target_position_point[select_targrt_num].x;
     robot_gimbal_aim_vector->y = solve_trajectory->all_target_position_point[select_targrt_num].y;

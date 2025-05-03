@@ -30,6 +30,9 @@
 //子弹类型 小弹丸 0，大弹丸 1, 发光大弹丸 2
 #define BULLET_TYPE 0
 
+//选择装甲板的方向，顺着0 ，迎着 1
+#define SELECT_ARMOR_DIR 1
+
 //重力加速度
 #define GRAVITY 9.75225639f
 
@@ -40,11 +43,15 @@
 
 //允许发弹距离 m
 #define ALLOW_ATTACK_DISTANCE 5.0f
-//允许发弹的kf收敛值
-#define ALLOE_ATTACK_P 3.0f
+//允许发弹的ekf收敛值
+#define ALLOE_ATTACK_P 2.0f
 
 /*    **      **     */
 
+//ekf收敛判断
+#define EKF_CONVERGENCE_P 2.0f
+//装甲板选择的速度阈值
+#define SELECT_ARMOR_V_YAW_THRES 1.5f
 //延时等待
 #define VISION_SEND_TASK_INIT_TIME 401
 //系统延时时间
