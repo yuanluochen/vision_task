@@ -18,19 +18,22 @@
 #include "INS_task.h"
 #include "arm_math.h"
 #include "remote_control.h"
+#include "referee.h"
 
 /*  **人工修正的参数**  */
 
 //云台转轴中心到枪口的竖直距离
 #define Z_STATIC 0.0f
 //云台转轴中心到发射最大初速度点的距离
-#define DISTANCE_STATIC 0.0483f
+#define DISTANCE_STATIC 0.145f
 //枪管pitch歪(相较于正确安装的误差)
 #define PITCH_STATIC 0.0f
 //子弹类型 小弹丸 0，大弹丸 1, 发光大弹丸 2
-#define BULLET_TYPE 0
+#define BULLET_TYPE 2
 
-//选择装甲板的方向，顺着0 ，迎着 1
+//云台yaw轴模式，置0跟随模式，置1静止瞄准中间模式
+#define AUTO_GIMBAL_YAW_MODE 1
+// 选择装甲板的方向，置0 顺着选，置1迎着选
 #define SELECT_ARMOR_DIR 1
 
 //重力加速度
@@ -39,10 +42,10 @@
 //固有时间偏移
 #define TIME_BIAS 35
 //根据云台控制器效果进行补偿
-#define TRACK_GIMBAL_COTROL_OFFSET_K 0.1f
+#define TRACK_GIMBAL_COTROL_OFFSET_K 0.0f
 
 //允许发弹距离 m
-#define ALLOW_ATTACK_DISTANCE 5.0f
+#define ALLOW_ATTACK_DISTANCE 12.0f
 //允许发弹的ekf收敛值
 #define ALLOE_ATTACK_P 2.0f
 
@@ -70,7 +73,7 @@
 #define AIR_K1 0.00556
 #else
 // 空气阻力系数简化版
-#define AIR_K1 0.00530
+#define AIR_K1 0.012
 #endif
 
 //弧度制转角度制
@@ -80,11 +83,11 @@
 #define ROBOT_RED_AND_BLUE_DIVIDE_VALUE 100.0f
 
 //最小设定弹速
-#define MIN_SET_BULLET_SPEED 19.0f
+#define MIN_SET_BULLET_SPEED 15.4f
 //最大设定弹速
-#define MAX_SET_BULLET_SPEED 25.0f
+#define MAX_SET_BULLET_SPEED 15.7f
 //初始设定弹速
-#define BEGIN_SET_BULLET_SPEED 23.8f
+#define BEGIN_SET_BULLET_SPEED 15.6f
 
 //大装甲板宽度
 #define SMALL_ARMOR_WIDTH 0.135f
@@ -234,6 +237,7 @@ typedef struct __attribute__((packed))
     float r2;
     float dz;
     float p;   //状态协方差矩阵的迹
+    uint8_t last_time;
     uint16_t checksum;
 } receive_packet_t;
 
@@ -333,6 +337,7 @@ typedef struct
     bullet_speed_t bullet_speed;
     // 检测装甲板的颜色(敌方装甲板的颜色)
     uint8_t detect_armor_color;
+    
 
     //目标数据
     target_data_t target_data;
@@ -344,8 +349,12 @@ typedef struct
 
     // 机器人云台瞄准位置向量
     vector_t robot_gimbal_aim_vector;
+    // 敌方机器人中心位置
+    vector_t robot_center;
     // 以机器人自身为原点在惯性系下敌方机器人的yaw角
     fp32 body_to_enemy_robot_yaw;
+    // 云台欲瞄准装甲板的角度
+    gimbal_vision_control_t aim_armor_angle;
 
     //接收的数据包指针
     vision_receive_t* vision_receive_point;
