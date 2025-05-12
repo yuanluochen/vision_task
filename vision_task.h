@@ -25,11 +25,11 @@
 //云台转轴中心到枪口的竖直距离
 #define Z_STATIC 0.0f
 //云台转轴中心到发射最大初速度点的距离
-#define DISTANCE_STATIC 0.145f
+#define DISTANCE_STATIC 0.0483f
 //枪管pitch歪(相较于正确安装的误差)
 #define PITCH_STATIC 0.0f
 //子弹类型 小弹丸 0，大弹丸 1, 发光大弹丸 2
-#define BULLET_TYPE 2
+#define BULLET_TYPE 0
 
 //云台yaw轴模式，置0跟随模式，置1静止瞄准中间模式
 #define AUTO_GIMBAL_YAW_MODE 1
@@ -39,20 +39,16 @@
 //重力加速度
 #define GRAVITY 9.75225639f
 
-//固有时间偏移
+//固有时间偏移--主要是测试视觉延迟+发射子弹的延迟
 #define TIME_BIAS 35
-//根据云台控制器效果进行补偿
-#define TRACK_GIMBAL_COTROL_OFFSET_K 0.0f
 
 //允许发弹距离 m
-#define ALLOW_ATTACK_DISTANCE 12.0f
+#define ALLOW_ATTACK_DISTANCE 5.0f
 //允许发弹的ekf收敛值
-#define ALLOE_ATTACK_P 2.0f
+#define ALLOE_ATTACK_P 4.0f
 
 /*    **      **     */
 
-//ekf收敛判断
-#define EKF_CONVERGENCE_P 2.0f
 //装甲板选择的速度阈值
 #define SELECT_ARMOR_V_YAW_THRES 1.5f
 //延时等待
@@ -199,6 +195,7 @@ typedef struct
     fp32 x;
     fp32 y;
     fp32 z;
+    fp32 r;
 } vector_t;
 
 // 发送数据包(紧凑模式下的结构体，防止因数据对齐引发的数据错位)
@@ -270,7 +267,7 @@ typedef struct
     // 本次云台pitch轴数值
     fp32 gimbal_pitch;
     //角速度前馈
-    // fp32 feed_forward_omega;
+    fp32 feed_forward_omega;
 } gimbal_vision_control_t;
 
 // 哨兵发射电机运动控制命令
@@ -349,8 +346,6 @@ typedef struct
 
     // 机器人云台瞄准位置向量
     vector_t robot_gimbal_aim_vector;
-    // 敌方机器人中心位置
-    vector_t robot_center;
     // 以机器人自身为原点在惯性系下敌方机器人的yaw角
     fp32 body_to_enemy_robot_yaw;
     // 云台欲瞄准装甲板的角度

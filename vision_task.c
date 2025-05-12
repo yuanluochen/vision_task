@@ -39,8 +39,6 @@ static void set_vision_send_packet(vision_control_t* set_send_packet);
 
 // 初始化弹道解算的参数
 static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory, fp32 k1, fp32 init_flight_time, fp32 time_bias, fp32 z_static, fp32 distance_static, fp32 pitch_static);
-// 选择最优击打目标
-static void select_optimal_target(solve_trajectory_t* solve_trajectory, target_data_t* vision_data, vector_t* robot_gimbal_aim_vector, vector_t* robot_center, fp32 cur_yaw, fp32 *body_to_enemy_robot_yaw);
 // 计算弹道落点 -- 单方向空间阻力模型
 static float calc_bullet_drop(solve_trajectory_t* solve_trajectory, float x, float bullet_speed, float theta);
 // 计算弹道落点 -- 完全空气阻力模型
@@ -61,7 +59,6 @@ static vision_receive_t* get_vision_receive_point(void);
 vision_control_t vision_control = { 0 };
 // 视觉接收结构体
 vision_receive_t vision_receive = { 0 };
-int8_t VISION = 0;
 
 void vision_task(void const* pvParameters)
 {
@@ -77,21 +74,11 @@ void vision_task(void const* pvParameters)
         // 更新数据---这里面有弹速要人工加弹速变量
         vision_task_feedback_update(&vision_control);
         // 设置目标装甲板颜色--人工加自身机器人id
-        vision_set_target_armor_color(&vision_control, 101);
+        vision_set_target_armor_color(&vision_control, robo_date.operater_id);
         // 判断是否识别到目标
         vision_judge_appear_target(&vision_control);
         // 处理上位机数据,计算弹道的空间落点，并反解空间绝对角,并设置控制命令
         vision_data_process(&vision_control);
-
-        if (vision_control.vision_receive_point->receive_packet.x < 3.4f && vision_control.vision_receive_point->receive_packet.x > 0.0f)
-        {
-          VISION = 1;
-        }
-        else
-        {
-          VISION = 0;
-        }
-
         // 配置发送数据包
         set_vision_send_packet(&vision_control);
         // 发送数据包
@@ -126,7 +113,7 @@ static void vision_task_init(vision_control_t* init)
 static void vision_task_feedback_update(vision_control_t* update)
 {
     //更新弹速--在这里加弹速变量
-    update_bullet_speed(&update->bullet_speed, get_shoot_data_point()->initial_speed);
+    update_bullet_speed(&update->bullet_speed, shoot_date.bullet_speed);
     update->solve_trajectory.current_bullet_speed = update->bullet_speed.est_bullet_speed;
     //获取目标数据
     if (update->vision_receive_point->receive_state == UNLOADED){
@@ -215,16 +202,94 @@ static void vision_judge_appear_target(vision_control_t* judge_appear_target)
 static void vision_data_process(vision_control_t* vision_data)
 {
     //判断是否识别到目标
-    if (vision_data->vision_target_appear_state == TARGET_APPEAR && vision_data->target_data.p < EKF_CONVERGENCE_P){
-        //  选择最优装甲板
-        select_optimal_target(&vision_data->solve_trajectory, &vision_data->target_data, &vision_data->robot_gimbal_aim_vector, &vision_data->robot_center, vision_data->vision_angle_point->Yaw, &vision_data->body_to_enemy_robot_yaw);
+    if (vision_data->vision_target_appear_state == TARGET_APPEAR){
+        // 计算预测时间 = 上一次的子弹飞行时间 + 固有偏移时间
+        vision_data->solve_trajectory.predict_time = vision_data->solve_trajectory.flight_time + vision_data->solve_trajectory.time_bias;
+        // 中心坐标位置预测
+        vector_t robot_center = {
+            .x = vision_data->target_data.x + vision_data->solve_trajectory.predict_time * vision_data->target_data.vx,
+            .y = vision_data->target_data.y + vision_data->solve_trajectory.predict_time * vision_data->target_data.vy,
+            .z = vision_data->target_data.z + vision_data->solve_trajectory.predict_time * vision_data->target_data.vz};
+        // 计算子弹到达目标时的yaw角度
+        vision_data->solve_trajectory.target_yaw = vision_data->target_data.yaw + vision_data->target_data.v_yaw * vision_data->solve_trajectory.predict_time;
+        // 赋值装甲板数量
+        vision_data->solve_trajectory.armor_num = vision_data->target_data.armors_num;
+
+        // 选择目标的数组编号
+        uint8_t select_targrt_num = 0;
+        fp32 r = 0;
+        // 计算所有装甲板的位置
+        for (int i = 0; i < vision_data->solve_trajectory.armor_num; i++)
+        {
+            if (vision_data->target_data.id == ARMOR_OUTPOST)
+            {
+                // 前哨站
+                r = vision_data->target_data.r1;
+            }
+            else
+            {
+                // 由于装甲板距离机器人中心距离不同，但是一般两两对称，所以进行计算装甲板位置时，第0 2块用当前半径，第1 3块用上一次半径
+                r = (i % 2 == 0) ? vision_data->target_data.r1 : vision_data->target_data.r2;
+            }
+            vision_data->solve_trajectory.all_target_position_point[i].yaw = vision_data->solve_trajectory.target_yaw + i * (ALL_CIRCLE / vision_data->solve_trajectory.armor_num);
+            vision_data->solve_trajectory.all_target_position_point[i].x = robot_center.x - r * cos(vision_data->solve_trajectory.all_target_position_point[i].yaw);
+            vision_data->solve_trajectory.all_target_position_point[i].y = robot_center.y - r * sin(vision_data->solve_trajectory.all_target_position_point[i].yaw);
+            vision_data->solve_trajectory.all_target_position_point[i].z = (i % 2 == 0) ? robot_center.z : robot_center.z + vision_data->target_data.dz;
+        }
+
+        // 选择与敌方机器人中心差值最小的目标,排序选择最小目标
+        (vision_data->body_to_enemy_robot_yaw) = atan2(robot_center.y, robot_center.x); // 目标中心的yaw角
+        fp32 yaw_error_min = fabs((vision_data->body_to_enemy_robot_yaw) - vision_data->solve_trajectory.all_target_position_point[0].yaw);
+        for (int i = 0; i < vision_data->solve_trajectory.armor_num; i++)
+        {
+            fp32 yaw_error_temp = fabsf((vision_data->body_to_enemy_robot_yaw) - vision_data->solve_trajectory.all_target_position_point[i].yaw);
+            if (yaw_error_temp <= yaw_error_min)
+            {
+                yaw_error_min = yaw_error_temp;
+                select_targrt_num = i;
+            }
+        }
+
+        // 根据速度方向选择下一块装甲板
+        if (SELECT_ARMOR_DIR == 1 && fabs(vision_data->target_data.v_yaw) > SELECT_ARMOR_V_YAW_THRES)
+        {
+            fp32 distance = sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2));
+            if (yaw_error_min > fabs(atan2(vision_data->target_data.r1 - 0.1f, distance)))
+            {
+                if (vision_data->target_data.v_yaw > SELECT_ARMOR_V_YAW_THRES)
+                {
+                    select_targrt_num += vision_data->solve_trajectory.armor_num - 1;
+                }
+                else if (vision_data->target_data.v_yaw < -SELECT_ARMOR_V_YAW_THRES)
+                {
+                    select_targrt_num += 1;
+                }
+                if (select_targrt_num >= vision_data->solve_trajectory.armor_num)
+                {
+                    select_targrt_num -= vision_data->solve_trajectory.armor_num;
+                }
+            }
+        }
+        // 将选择的装甲板数据，拷贝到云台瞄准向量
+        vision_data->robot_gimbal_aim_vector.x = vision_data->solve_trajectory.all_target_position_point[select_targrt_num].x;
+        vision_data->robot_gimbal_aim_vector.y = vision_data->solve_trajectory.all_target_position_point[select_targrt_num].y;
+        vision_data->robot_gimbal_aim_vector.z = vision_data->solve_trajectory.all_target_position_point[select_targrt_num].z;
+
+        if (vision_data->target_data.id == ARMOR_OUTPOST)
+        {
+            vision_data->robot_gimbal_aim_vector.r = vision_data->target_data.r1;
+        }
+        else
+        {
+            vision_data->robot_gimbal_aim_vector.r = (select_targrt_num % 2 == 0) ? vision_data->target_data.r1 : vision_data->target_data.r2;
+        }
         // 计算机器人pitch轴与yaw轴角度
         // 瞄准装甲板对应的角度
         vision_data->aim_armor_angle.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(vision_data->robot_gimbal_aim_vector.x, 2) + pow(vision_data->robot_gimbal_aim_vector.y, 2)), vision_data->robot_gimbal_aim_vector.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
         vision_data->aim_armor_angle.gimbal_yaw = atan2(vision_data->robot_gimbal_aim_vector.y, vision_data->robot_gimbal_aim_vector.x);
         // 根据瞄准目标是否为前哨站选择pitch轴角度计算方法
         if (vision_data->target_data.id == ARMOR_OUTPOST) {
-            vision_data->gimbal_vision_control.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(vision_data->robot_center.x, 2) + pow(vision_data->robot_center.y, 2)) - vision_data->target_data.r1, vision_data->robot_center.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
+            vision_data->gimbal_vision_control.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2)) - vision_data->robot_gimbal_aim_vector.r, robot_center.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
         }
         else { 
             vision_data->gimbal_vision_control.gimbal_pitch = vision_data->aim_armor_angle.gimbal_pitch;
@@ -237,6 +302,16 @@ static void vision_data_process(vision_control_t* vision_data)
         else{
             vision_data->gimbal_vision_control.gimbal_yaw = vision_data->aim_armor_angle.gimbal_yaw;
         }
+        //动态跟踪前馈
+        //正交向量
+        fp32 x_temp = -robot_center.y;
+        fp32 y_temp = robot_center.x;
+        //向量单位化
+        x_temp = x_temp / sqrt(pow(x_temp, 2) + pow(y_temp, 2));
+        y_temp = y_temp / sqrt(pow(x_temp, 2) + pow(y_temp, 2));
+        //线速度转角速度
+        vision_data->gimbal_vision_control.feed_forward_omega = (x_temp * vision_data->target_data.vx + y_temp * vision_data->target_data.vy) / sqrt(pow(x_temp, 2) + pow(y_temp, 2));
+
     }
     //判断击打
     vision_shoot_judge(vision_data);
@@ -269,7 +344,7 @@ static void vision_shoot_judge(vision_control_t* shoot_judge)
                         allow_attack_error_yaw = atan2((SMALL_ARMOR_WIDTH / 2.0f) - 0.03f, target_distance);
                     }
                     fp32 yaw_error = shoot_judge->aim_armor_angle.gimbal_yaw - shoot_judge->vision_angle_point->Yaw;
-                    fp32 pitch_error = shoot_judge->aim_armor_angle.gimbal_pitch - (-shoot_judge->vision_angle_point->Pitch);
+                    fp32 pitch_error = shoot_judge->aim_armor_angle.gimbal_pitch - (shoot_judge->vision_angle_point->Pitch);
                     // 小于一角度开始击打
                     if (fabs(yaw_error) <= fabs(allow_attack_error_yaw) && fabs(pitch_error) <= fabs(allow_attack_error_pitch)){
                         shoot_judge->shoot_vision_control.shoot_command = SHOOT_ATTACK;
@@ -300,7 +375,7 @@ static void set_vision_send_packet(vision_control_t* set_send_packet)
     set_send_packet->send_packet.header = LOWER_TO_HIGH_HEAD;
     set_send_packet->send_packet.detect_color = set_send_packet->detect_armor_color;
     set_send_packet->send_packet.roll = set_send_packet->vision_angle_point->Roll;
-    set_send_packet->send_packet.pitch = -set_send_packet->vision_angle_point->Pitch;
+    set_send_packet->send_packet.pitch = set_send_packet->vision_angle_point->Pitch;
     set_send_packet->send_packet.yaw = set_send_packet->vision_angle_point->Yaw;
     set_send_packet->send_packet.aim_x = set_send_packet->robot_gimbal_aim_vector.x;
     set_send_packet->send_packet.aim_y = set_send_packet->robot_gimbal_aim_vector.y;
@@ -374,95 +449,6 @@ static void solve_trajectory_param_init(solve_trajectory_t* solve_trajectory,
     solve_trajectory->pitch_static = pitch_static;
 }
 
-
-/**
- * @brief 选择最优击打目标
- * 
- * @param solve_trajectory 弹道计算结构体
- * @param vision_data 视觉接收数据
- * @param robot_gimbal_aim_vector 最后云台瞄准向量 
- * @param cur_yaw 当前yaw角用于补偿
- * @param body_to_enemy_robot_yaw 以机器人自身为原点在惯性系下敌方机器人的yaw角，在这里主要是给赋值用的
- */
-static void select_optimal_target(solve_trajectory_t *solve_trajectory,
-                                  target_data_t *vision_data,
-                                  vector_t *robot_gimbal_aim_vector,
-                                  vector_t *robot_center,
-                                  fp32 cur_yaw, 
-                                  fp32 *body_to_enemy_robot_yaw
-                                )
-{   
-    //计算预测时间 = 上一次的子弹飞行时间 + 固有偏移时间 
-    solve_trajectory->predict_time = solve_trajectory->flight_time + solve_trajectory->time_bias;
-    //中心坐标位置预测
-    robot_center->x = vision_data->x + solve_trajectory->predict_time * vision_data->vx;
-    robot_center->y = vision_data->y + solve_trajectory->predict_time * vision_data->vy;
-    robot_center->z = vision_data->z + solve_trajectory->predict_time * vision_data->vz;
-
-    // 云台运动时间近似补偿->主要补偿平移
-    fp32 predict_time_offset = fabs(atan2f(robot_center->y, robot_center->x)- cur_yaw) * TRACK_GIMBAL_COTROL_OFFSET_K;
-    solve_trajectory->predict_time += predict_time_offset;
-
-    robot_center->x += vision_data->vx * predict_time_offset;
-    robot_center->y += vision_data->vy * predict_time_offset;
-
-    //计算子弹到达目标时的yaw角度
-    solve_trajectory->target_yaw = vision_data->yaw + vision_data->v_yaw * solve_trajectory->predict_time;
-
-    //赋值装甲板数量
-    solve_trajectory->armor_num = vision_data->armors_num;
-
-    //选择目标的数组编号
-    uint8_t select_targrt_num = 0;
-    fp32 r = 0;
-    //计算所有装甲板的位置
-    for (int i = 0; i < solve_trajectory->armor_num; i++){
-        if (solve_trajectory->armor_num == 3) {
-            //前哨站
-            r = vision_data->r1;
-        }
-        else{
-          // 由于装甲板距离机器人中心距离不同，但是一般两两对称，所以进行计算装甲板位置时，第0 2块用当前半径，第1 3块用上一次半径
-            r = (i % 2 == 0) ? vision_data->r1 : vision_data->r2;
-        }
-        solve_trajectory->all_target_position_point[i].yaw = solve_trajectory->target_yaw + i * (ALL_CIRCLE / solve_trajectory->armor_num);
-        solve_trajectory->all_target_position_point[i].x = robot_center->x - r * cos(solve_trajectory->all_target_position_point[i].yaw);
-        solve_trajectory->all_target_position_point[i].y = robot_center->y - r * sin(solve_trajectory->all_target_position_point[i].yaw);
-        solve_trajectory->all_target_position_point[i].z = (i % 2 == 0) ? robot_center->z : robot_center->z + vision_data->dz;
-    }
-
-    // 选择与敌方机器人中心差值最小的目标,排序选择最小目标
-    (*body_to_enemy_robot_yaw) = atan2(robot_center->y, robot_center->x); //目标中心的yaw角
-    fp32 yaw_error_min = fabs((*body_to_enemy_robot_yaw) - solve_trajectory->all_target_position_point[0].yaw);
-    for (int i = 0; i < solve_trajectory->armor_num; i++){
-        fp32 yaw_error_temp = fabsf((*body_to_enemy_robot_yaw) - solve_trajectory->all_target_position_point[i].yaw);
-        if (yaw_error_temp <= yaw_error_min){
-            yaw_error_min = yaw_error_temp;
-            select_targrt_num = i;
-        }
-    }
-
-    // 根据速度方向选择下一块装甲板
-    if (SELECT_ARMOR_DIR == 1 && vision_data->p < EKF_CONVERGENCE_P && fabs(vision_data->v_yaw) > SELECT_ARMOR_V_YAW_THRES){
-        fp32 distance = sqrt(pow(robot_center->x, 2) + pow(robot_center->y, 2));
-        if (yaw_error_min > fabs(atan2(vision_data->r1 - 0.1f, distance))){
-            if (vision_data->v_yaw > SELECT_ARMOR_V_YAW_THRES){
-                select_targrt_num += solve_trajectory->armor_num - 1;
-            }
-            else if (vision_data->v_yaw < -SELECT_ARMOR_V_YAW_THRES){
-                select_targrt_num += 1;
-            }
-            if (select_targrt_num >= solve_trajectory->armor_num){
-                select_targrt_num -= solve_trajectory->armor_num;
-            }
-        }
-    }
-    
-    // 将选择的装甲板数据，拷贝到云台瞄准向量
-    robot_gimbal_aim_vector->x = solve_trajectory->all_target_position_point[select_targrt_num].x;
-    robot_gimbal_aim_vector->y = solve_trajectory->all_target_position_point[select_targrt_num].y;
-    robot_gimbal_aim_vector->z = solve_trajectory->all_target_position_point[select_targrt_num].z;
-}
 
 /**
  * @brief 计算子弹落点
