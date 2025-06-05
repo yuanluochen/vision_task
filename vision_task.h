@@ -23,29 +23,29 @@
 /*  **人工修正的参数**  */
 
 //云台转轴中心到枪口的竖直距离
-#define Z_STATIC 0.0f
+#define Z_STATIC -0.06f
 //云台转轴中心到发射最大初速度点的距离
-#define DISTANCE_STATIC 0.0483f
+#define DISTANCE_STATIC 0.053f
 //枪管pitch歪(相较于正确安装的误差)
 #define PITCH_STATIC 0.0f
 //子弹类型 小弹丸 0，大弹丸 1, 发光大弹丸 2
 #define BULLET_TYPE 0
 
 //云台yaw轴模式，置0跟随模式，置1静止瞄准中间模式
-#define AUTO_GIMBAL_YAW_MODE 1
+#define AUTO_GIMBAL_YAW_MODE 0
 // 选择装甲板的方向，置0 顺着选，置1迎着选
 #define SELECT_ARMOR_DIR 1
 
 //重力加速度
-#define GRAVITY 9.75225639f
+#define GRAVITY 9.8f
 
 //固有时间偏移--主要是测试视觉延迟+发射子弹的延迟
-#define TIME_BIAS 35
+#define TIME_BIAS 15
 
 //允许发弹距离 m
-#define ALLOW_ATTACK_DISTANCE 5.0f
+#define ALLOW_ATTACK_DISTANCE 10.0f
 //允许发弹的ekf收敛值
-#define ALLOE_ATTACK_P 4.0f
+#define ALLOE_ATTACK_P 2.0f
 
 /*    **      **     */
 
@@ -63,7 +63,7 @@
 
 #if (BULLET_TYPE == 0)
 // 空气阻力系数简化版
-#define AIR_K1 0.019
+#define AIR_K1 0.019//0.2f
 #elif (BULLET_TYPE == 1)
 // 空气阻力系数简化版
 #define AIR_K1 0.00556
@@ -79,18 +79,18 @@
 #define ROBOT_RED_AND_BLUE_DIVIDE_VALUE 100.0f
 
 //最小设定弹速
-#define MIN_SET_BULLET_SPEED 15.4f
+#define MIN_SET_BULLET_SPEED 20.1f
 //最大设定弹速
-#define MAX_SET_BULLET_SPEED 15.7f
+#define MAX_SET_BULLET_SPEED 25.0f
 //初始设定弹速
-#define BEGIN_SET_BULLET_SPEED 15.6f
+#define BEGIN_SET_BULLET_SPEED 22.3f
 
 //大装甲板宽度
 #define SMALL_ARMOR_WIDTH 0.135f
 //小装甲板宽度
 #define LARGE_ARM0R_WIDTH 0.230f
 //装甲板高度
-#define ARMOR_HIGH 0.055f
+#define ARMOR_HIGH 0.120f
 
 //初始子弹飞行迭代数值
 #define T_0 0.0f
@@ -234,7 +234,7 @@ typedef struct __attribute__((packed))
     float r2;
     float dz;
     float p;   //状态协方差矩阵的迹
-    uint8_t last_time;
+    float latency_time;
     uint16_t checksum;
 } receive_packet_t;
 

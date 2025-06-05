@@ -74,7 +74,7 @@ void vision_task(void const* pvParameters)
         // 更新数据---这里面有弹速要人工加弹速变量
         vision_task_feedback_update(&vision_control);
         // 设置目标装甲板颜色--人工加自身机器人id
-        vision_set_target_armor_color(&vision_control, robo_date.operater_id);
+        vision_set_target_armor_color(&vision_control, 04);
         // 判断是否识别到目标
         vision_judge_appear_target(&vision_control);
         // 处理上位机数据,计算弹道的空间落点，并反解空间绝对角,并设置控制命令
@@ -158,10 +158,10 @@ static void vision_set_target_armor_color(vision_control_t* set_detect_color, ui
 {
     //设置目标颜色为目标颜色
     if (cur_robot_id < ROBOT_RED_AND_BLUE_DIVIDE_VALUE){
-        set_detect_color->detect_armor_color = RED;
+        set_detect_color->detect_armor_color = BLUE;
     }
     else{
-        set_detect_color->detect_armor_color = BLUE;
+        set_detect_color->detect_armor_color = RED;
     }
 }
 
@@ -204,7 +204,7 @@ static void vision_data_process(vision_control_t* vision_data)
     //判断是否识别到目标
     if (vision_data->vision_target_appear_state == TARGET_APPEAR){
         // 计算预测时间 = 上一次的子弹飞行时间 + 固有偏移时间
-        vision_data->solve_trajectory.predict_time = vision_data->solve_trajectory.flight_time + vision_data->solve_trajectory.time_bias;
+        vision_data->solve_trajectory.predict_time = vision_data->solve_trajectory.flight_time + vision_data->solve_trajectory.time_bias + vision_data->target_data.latency_time;
         // 中心坐标位置预测
         vector_t robot_center = {
             .x = vision_data->target_data.x + vision_data->solve_trajectory.predict_time * vision_data->target_data.vx,
@@ -225,6 +225,7 @@ static void vision_data_process(vision_control_t* vision_data)
             {
                 // 前哨站
                 r = vision_data->target_data.r1;
+
             }
             else
             {
@@ -254,7 +255,7 @@ static void vision_data_process(vision_control_t* vision_data)
         if (SELECT_ARMOR_DIR == 1 && fabs(vision_data->target_data.v_yaw) > SELECT_ARMOR_V_YAW_THRES)
         {
             fp32 distance = sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2));
-            if (yaw_error_min > fabs(atan2(vision_data->target_data.r1 - 0.1f, distance)))
+            if (yaw_error_min > 0.6)
             {
                 if (vision_data->target_data.v_yaw > SELECT_ARMOR_V_YAW_THRES)
                 {
@@ -288,19 +289,21 @@ static void vision_data_process(vision_control_t* vision_data)
         vision_data->aim_armor_angle.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(vision_data->robot_gimbal_aim_vector.x, 2) + pow(vision_data->robot_gimbal_aim_vector.y, 2)), vision_data->robot_gimbal_aim_vector.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
         vision_data->aim_armor_angle.gimbal_yaw = atan2(vision_data->robot_gimbal_aim_vector.y, vision_data->robot_gimbal_aim_vector.x);
         // 根据瞄准目标是否为前哨站选择pitch轴角度计算方法
-        if (vision_data->target_data.id == ARMOR_OUTPOST) {
-            vision_data->gimbal_vision_control.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2)) - vision_data->robot_gimbal_aim_vector.r, robot_center.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
-        }
+        if (AUTO_GIMBAL_YAW_MODE == 1 && fabs(vision_data->target_data.v_yaw) > 1.0f ||
+            AUTO_GIMBAL_YAW_MODE == 0 &&+ fabs(vision_data->target_data.v_yaw) > 3.0f) {
+				vision_data->gimbal_vision_control.gimbal_pitch = calc_target_position_pitch_angle(&vision_data->solve_trajectory, sqrt(pow(robot_center.x, 2) + pow(robot_center.y, 2)) - vision_data->robot_gimbal_aim_vector.r, robot_center.z, vision_data->solve_trajectory.distance_static, vision_data->solve_trajectory.z_static, vision_data->solve_trajectory.pitch_static, 1);
+			}
         else { 
             vision_data->gimbal_vision_control.gimbal_pitch = vision_data->aim_armor_angle.gimbal_pitch;
         }
         //当为瞄准机器人中心模式且转速大于一定值或者敌方机器人转速过快时->瞄准敌方机器人中心
-        if (AUTO_GIMBAL_YAW_MODE == 1 && vision_data->target_data.v_yaw > 1.0f ||
-            AUTO_GIMBAL_YAW_MODE == 0 && vision_data->target_data.v_yaw > 10.0f){
-            vision_data->gimbal_vision_control.gimbal_yaw = vision_data->body_to_enemy_robot_yaw;;
+        if (AUTO_GIMBAL_YAW_MODE == 1 && fabs(vision_data->target_data.v_yaw) > 1.0f ||
+            AUTO_GIMBAL_YAW_MODE == 0 && fabs(vision_data->target_data.v_yaw) > 3.0f){
+            vision_data->gimbal_vision_control.gimbal_yaw = vision_data->body_to_enemy_robot_yaw;
         }
         else{
             vision_data->gimbal_vision_control.gimbal_yaw = vision_data->aim_armor_angle.gimbal_yaw;
+			
         }
         //动态跟踪前馈
         //正交向量
@@ -334,14 +337,19 @@ static void vision_shoot_judge(vision_control_t* shoot_judge)
             // 判断观测器是否收敛
             if (shoot_judge->target_data.p < ALLOE_ATTACK_P){
                 // 根据敌方机器人半径和当前瞄准位置判断是否过偏
-                if (fabs(shoot_judge->body_to_enemy_robot_yaw - shoot_judge->vision_angle_point->Yaw) <= fabs(atan2(shoot_judge->target_data.r1 - 0.11f, target_distance))){
+								fp32 diff_yaw_angle = fabs(shoot_judge->body_to_enemy_robot_yaw - shoot_judge->vision_angle_point->Yaw);
+								if (diff_yaw_angle >= PI)
+								{
+									diff_yaw_angle -= PI;
+								}
+                if (diff_yaw_angle <= 0.1 || shoot_judge->target_data.v_yaw < 1){
                     // 根据装甲板大小和距离判断允许发弹误差角
-                    allow_attack_error_pitch = atan2((ARMOR_HIGH / 2.0f), target_distance);
+                    allow_attack_error_pitch = atan2((ARMOR_HIGH / 2.0f) - 0.05, target_distance);
                     if (shoot_judge->target_data.id == ARMOR_HERO){
-                        allow_attack_error_yaw = atan2((LARGE_ARM0R_WIDTH / 2.0f) - 0.03f, target_distance);
+                        allow_attack_error_yaw = atan2((LARGE_ARM0R_WIDTH / 2.0f) - 0.08f, target_distance);
                     }
                     else{
-                        allow_attack_error_yaw = atan2((SMALL_ARMOR_WIDTH / 2.0f) - 0.03f, target_distance);
+                        allow_attack_error_yaw = atan2((SMALL_ARMOR_WIDTH / 2.0f) - 0.08f, target_distance);
                     }
                     fp32 yaw_error = shoot_judge->aim_armor_angle.gimbal_yaw - shoot_judge->vision_angle_point->Yaw;
                     fp32 pitch_error = shoot_judge->aim_armor_angle.gimbal_pitch - (shoot_judge->vision_angle_point->Pitch);
